@@ -1,0 +1,5 @@
+{
+  "scopeName": "source.http-client-env",
+  "name": "HTTP Client Environment",
+  "patterns": [{ "include": "source.json" }]
+}
