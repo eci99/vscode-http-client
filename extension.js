@@ -3,10 +3,11 @@
 const vscode = require('vscode');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { parse, findRequestAt } = require('./src/parser');
 const { runRequest, buildRequest, toCurl } = require('./src/runner');
 const { CookieJar } = require('./src/cookies');
-const { formatResults } = require('./src/format');
+const { formatResults, STATUS_LINE, isBinaryResponse } = require('./src/format');
 const { DYNAMIC_VARIABLES, describeVariable } = require('./src/variables');
 
 const LANG = 'http-client';
@@ -158,6 +159,69 @@ function responseUriFor() {
   return RESPONSE_URI;
 }
 
+// Responses of the latest run, in the order they appear in the response tab.
+let bodies = [];
+
+const MIME_EXT = {
+  'image/jpeg': '.jpg', 'image/svg+xml': '.svg', 'application/pdf': '.pdf', 'application/zip': '.zip',
+  'application/gzip': '.gz', 'application/octet-stream': '.bin', 'audio/mpeg': '.mp3', 'video/mp4': '.mp4',
+  'text/plain': '.txt'
+};
+
+function extForMime(mime) {
+  const m = (mime || '').split(';')[0].trim().toLowerCase();
+  if (MIME_EXT[m]) return MIME_EXT[m];
+  if (m.includes('json')) return '.json';
+  if (m.includes('xml')) return '.xml';
+  const sub = /^[a-z]+\/([a-z0-9]+)$/.exec(m);
+  return sub ? `.${sub[1]}` : '.txt';
+}
+
+const responseLensEmitter = new vscode.EventEmitter();
+
+const responseLensProvider = {
+  onDidChangeCodeLenses: responseLensEmitter.event,
+  provideCodeLenses(doc) {
+    const lenses = [];
+    let idx = 0;
+    for (let i = 0; i < doc.lineCount && idx < bodies.length; i++) {
+      if (!STATUS_LINE.test(doc.lineAt(i).text)) continue;
+      const range = new vscode.Range(i, 0, i, 0);
+      lenses.push(new vscode.CodeLens(range, { title: '$(eye) Open in viewer', command: 'httpClient.openBody', arguments: [idx] }));
+      if (/html/.test(bodies[idx].mimeType || '')) {
+        lenses.push(new vscode.CodeLens(range, { title: '$(globe) Open in browser', command: 'httpClient.openBody', arguments: [idx, true] }));
+      }
+      lenses.push(new vscode.CodeLens(range, { title: '$(save) Save as…', command: 'httpClient.saveBody', arguments: [idx] }));
+      idx++;
+    }
+    return lenses;
+  }
+};
+
+async function openBody(idx, external) {
+  const res = bodies[idx];
+  if (!res) return;
+  const binary = isBinaryResponse(res);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'http-client-'));
+  const file = path.join(dir, `response-${idx + 1}${extForMime(res.mimeType)}`);
+  const pretty = !binary && typeof res.parsedBody === 'object' && res.parsedBody !== null
+    ? JSON.stringify(res.parsedBody, null, 2) : res.text;
+  fs.writeFileSync(file, binary ? res.bodyBuffer : pretty);
+  const uri = vscode.Uri.file(file);
+  if (!external && (!binary || /^image\/|application\/pdf/.test(res.mimeType || ''))) {
+    await vscode.commands.executeCommand('vscode.open', uri, { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true, preview: false });
+  } else {
+    await vscode.env.openExternal(uri);
+  }
+}
+
+async function saveBody(idx) {
+  const res = bodies[idx];
+  if (!res) return;
+  const target = await vscode.window.showSaveDialog({ defaultUri: vscode.Uri.file(path.join(os.homedir(), `response${extForMime(res.mimeType)}`)) });
+  if (target) await vscode.workspace.fs.writeFile(target, res.bodyBuffer);
+}
+
 async function showResponse(doc, content, reveal = false) {
   const uri = responseUriFor(doc);
   responses.set(uri.toString(), content);
@@ -245,9 +309,11 @@ async function execute(doc, requests) {
         const r = await runRequest(req, ctx);
         results.push(r);
         logResult(r);
+        bodies = results.filter(x => x.response).map(x => x.response);
         responses.set(responseUriFor(doc).toString(),
           formatResults(results, { prettyJson: cfg.get('prettyPrintJson', true), environment }));
         responseEmitter.fire(responseUriFor(doc));
+        responseLensEmitter.fire();
       }
     });
   persistState();
@@ -457,6 +523,9 @@ function activate(context) {
     output, statusBar, envWatcher,
     vscode.workspace.registerTextDocumentContentProvider(RESPONSE_SCHEME, responseProvider),
     vscode.languages.registerCodeLensProvider(selector, codeLensProvider),
+    vscode.languages.registerCodeLensProvider({ language: 'http-client-response' }, responseLensProvider),
+    vscode.commands.registerCommand('httpClient.openBody', openBody),
+    vscode.commands.registerCommand('httpClient.saveBody', saveBody),
     vscode.languages.registerCompletionItemProvider(selector, completionProvider, '{'),
     vscode.languages.registerHoverProvider(selector, hoverProvider),
     vscode.window.onDidChangeActiveTextEditor(updateStatusBar),

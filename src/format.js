@@ -8,9 +8,15 @@ function formatBytes(n) {
 
 const BINARY_MIME = /^(image|audio|video|font)\/|application\/(octet-stream|pdf|zip|gzip|x-tar|vnd\.)/;
 
+const STATUS_LINE = /^HTTP\/1\.1 \d{3}/;
+
+function isBinaryResponse({ mimeType }) {
+  return !!mimeType && BINARY_MIME.test(mimeType) && !/xml|json/.test(mimeType);
+}
+
 function prettyBody(response, pretty) {
-  const { text, mimeType, bodyBuffer } = response;
-  if (mimeType && BINARY_MIME.test(mimeType) && !/xml|json/.test(mimeType)) {
+  const { text, bodyBuffer } = response;
+  if (isBinaryResponse(response)) {
     return `<binary content, ${formatBytes(bodyBuffer.length)}>`;
   }
   if (pretty && typeof response.parsedBody === 'object' && response.parsedBody !== null) {
@@ -53,4 +59,4 @@ function formatResults(results, opts) {
   return results.map(r => formatResult(r, opts)).join('\n\n###\n\n') + '\n';
 }
 
-module.exports = { formatResult, formatResults, formatBytes };
+module.exports = { formatResult, formatResults, formatBytes, STATUS_LINE, isBinaryResponse };
