@@ -1,0 +1,119 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "HTTP-Client Request",
+  "scopeName": "source.http-client",
+  "patterns": [
+    { "include": "#separator" },
+    { "include": "#script" },
+    { "include": "#tag" },
+    { "include": "#comment" },
+    { "include": "#fileVariable" },
+    { "include": "#responseFile" },
+    { "include": "#bodyFile" },
+    { "include": "#requestLine" },
+    { "include": "#queryContinuation" },
+    { "include": "#header" },
+    { "include": "#jsonBody" },
+    { "include": "#xmlBody" },
+    { "include": "#variable" }
+  ],
+  "repository": {
+    "separator": {
+      "match": "^(###)(.*)$",
+      "captures": {
+        "1": { "name": "punctuation.separator.request.http-client keyword.control" },
+        "2": { "name": "entity.name.section.request.http-client markup.heading" }
+      }
+    },
+    "tag": {
+      "match": "^\\s*(#|//)\\s*(@[\\w-]+)(.*)$",
+      "captures": {
+        "1": { "name": "comment.line.http-client" },
+        "2": { "name": "storage.type.annotation.http-client" },
+        "3": { "name": "string.unquoted.http-client" }
+      }
+    },
+    "comment": {
+      "match": "^\\s*(#|//).*$",
+      "name": "comment.line.http-client"
+    },
+    "fileVariable": {
+      "match": "^(@[\\w.-]+)\\s*(=)\\s*(.*)$",
+      "captures": {
+        "1": { "name": "variable.other.declaration.http-client" },
+        "2": { "name": "keyword.operator.assignment.http-client" },
+        "3": { "patterns": [ { "include": "#variable" }, { "match": ".+", "name": "string.unquoted.http-client" } ] }
+      }
+    },
+    "script": {
+      "begin": "^\\s*([<>])\\s*(\\{%)",
+      "end": "(%\\})",
+      "beginCaptures": {
+        "1": { "name": "keyword.operator.script.http-client" },
+        "2": { "name": "punctuation.section.embedded.begin.http-client" }
+      },
+      "endCaptures": { "1": { "name": "punctuation.section.embedded.end.http-client" } },
+      "contentName": "meta.embedded.block.javascript",
+      "patterns": [ { "include": "source.js" } ]
+    },
+    "responseFile": {
+      "match": "^(>>!?|>)\\s+(.*)$",
+      "captures": {
+        "1": { "name": "keyword.operator.redirect.http-client" },
+        "2": { "name": "string.unquoted.path.http-client" }
+      }
+    },
+    "bodyFile": {
+      "match": "^(<@?)\\s+(.*)$",
+      "captures": {
+        "1": { "name": "keyword.operator.redirect.http-client" },
+        "2": { "name": "string.unquoted.path.http-client" }
+      }
+    },
+    "requestLine": {
+      "match": "^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE|CONNECT|GRAPHQL|WEBSOCKET)\\s+(.*?)(?:\\s+(HTTP/[\\d.]+))?\\s*$",
+      "captures": {
+        "1": { "name": "keyword.control.http-method.http-client" },
+        "2": { "name": "string.unquoted.url.http-client", "patterns": [ { "include": "#variable" } ] },
+        "3": { "name": "constant.language.http-version.http-client" }
+      }
+    },
+    "queryContinuation": {
+      "match": "^\\s+([?&])([^=\\s]+)(=)?(.*)$",
+      "captures": {
+        "1": { "name": "punctuation.separator.query.http-client" },
+        "2": { "name": "variable.parameter.query.http-client", "patterns": [ { "include": "#variable" } ] },
+        "3": { "name": "keyword.operator.assignment.http-client" },
+        "4": { "name": "string.unquoted.http-client", "patterns": [ { "include": "#variable" } ] }
+      }
+    },
+    "header": {
+      "match": "^([\\w-]+)\\s*(:)\\s*(.*)$",
+      "captures": {
+        "1": { "name": "entity.name.tag.header.http-client support.type.property-name" },
+        "2": { "name": "punctuation.separator.key-value.http-client" },
+        "3": { "name": "string.unquoted.header-value.http-client", "patterns": [ { "include": "#variable" } ] }
+      }
+    },
+    "jsonBody": {
+      "begin": "^(?=\\s*[\\[{])",
+      "end": "^(?=###|\\s*>|\\s*<\\s)",
+      "contentName": "meta.embedded.block.json",
+      "patterns": [ { "include": "#variable" }, { "include": "source.json" } ]
+    },
+    "xmlBody": {
+      "begin": "^(?=\\s*<[\\w?!])",
+      "end": "^(?=###|\\s*>\\s*\\{%|\\s*>>)",
+      "contentName": "meta.embedded.block.xml",
+      "patterns": [ { "include": "#variable" }, { "include": "text.xml" } ]
+    },
+    "variable": {
+      "match": "(\\{\\{)\\s*([^{}]+?)\\s*(\\}\\})",
+      "captures": {
+        "1": { "name": "punctuation.definition.template-expression.begin.http-client" },
+        "2": { "name": "variable.other.http-client" },
+        "3": { "name": "punctuation.definition.template-expression.end.http-client" }
+      }
+    }
+  }
+}

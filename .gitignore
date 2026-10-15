@@ -1,0 +1,3 @@
+node_modules/
+*.vsix
+http-client.private.env.json

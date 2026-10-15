@@ -1,0 +1,32 @@
+# Beispiele – mit "HTTP-Client: Create Environment File" eine Umgebung anlegen
+@user = janos
+
+### Einfacher GET
+GET https://httpbin.org/get
+    ?id={{$random.integer(1, 100)}}
+    &trace={{$uuid}}
+Accept: application/json
+
+> {%
+  client.test("Status 200", () => client.assert(response.status === 200, "Status " + response.status));
+  client.log("id =", jsonPath(response.body, "$.args.id"));
+%}
+
+### POST mit JSON und globaler Variable
+POST https://httpbin.org/post
+Content-Type: application/json
+
+{"user": "{{user}}", "ts": {{$timestamp}}}
+
+> {%
+  client.global.set("echoUser", response.body.json.user);
+%}
+
+### Pre-Request-Skript mit HMAC-Signatur
+< {%
+  const sig = crypto.hmac.sha256().withTextSecret("secret").updateWithText(request.url.tryGetSubstituted()).digest().toHex();
+  request.variables.set("signature", sig);
+%}
+GET https://httpbin.org/headers
+X-Signature: {{signature}}
+X-User: {{echoUser}}

@@ -1,0 +1,47 @@
+{
+  "GET request": {
+    "prefix": "gtr",
+    "body": ["GET http://${1:localhost}:${2:80}/${3:api/item}", "Accept: application/json", "", "###", "$0"],
+    "description": "GET request"
+  },
+  "GET request with parameters": {
+    "prefix": "gtrp",
+    "body": ["GET http://${1:localhost}:${2:80}/${3:api/item}?${4:id}=${5:99}", "Accept: application/json", "", "###", "$0"],
+    "description": "GET request with query parameters"
+  },
+  "POST request": {
+    "prefix": "ptr",
+    "body": ["POST http://${1:localhost}:${2:80}/${3:api/item}", "Content-Type: application/json", "", "{", "  \"${4:id}\": ${5:99},", "  \"${6:content}\": \"${7:new-element}\"", "}", "", "###", "$0"],
+    "description": "POST request with JSON body"
+  },
+  "POST request with parameters": {
+    "prefix": "ptrp",
+    "body": ["POST http://${1:localhost}:${2:80}/${3:api/item}", "Content-Type: application/x-www-form-urlencoded", "", "${4:id}=${5:99}&${6:content}=${7:new-element}", "", "###", "$0"],
+    "description": "POST request with form parameters"
+  },
+  "Multipart POST": {
+    "prefix": "mptr",
+    "body": ["POST http://${1:localhost}:${2:80}/${3:api/item}", "Content-Type: multipart/form-data; boundary=WebAppBoundary", "", "--WebAppBoundary", "Content-Disposition: form-data; name=\"${4:field-name}\"", "", "${5:field-value}", "--WebAppBoundary--", "", "###", "$0"],
+    "description": "Multipart form POST"
+  },
+  "Multipart file upload": {
+    "prefix": "fptr",
+    "body": ["POST http://${1:localhost}:${2:80}/${3:api/upload}", "Content-Type: multipart/form-data; boundary=WebAppBoundary", "", "--WebAppBoundary", "Content-Disposition: form-data; name=\"${4:file}\"; filename=\"${5:input.txt}\"", "", "< ./${5:input.txt}", "--WebAppBoundary--", "", "###", "$0"],
+    "description": "Multipart file upload"
+  },
+  "Response handler": {
+    "prefix": "rh",
+    "body": ["> {%", "  client.test(\"${1:Request executed successfully}\", function () {", "    client.assert(response.status === ${2:200}, \"Response status is not ${2:200}\");", "  });", "  $0", "%}"],
+    "description": "Response handler with test"
+  },
+  "Pre-request script": {
+    "prefix": "prs",
+    "body": ["< {%", "  request.variables.set(\"${1:name}\", ${2:\\$random.uuid});", "%}"],
+    "description": "Pre-request script"
+  },
+  "GraphQL request": {
+    "prefix": "gqlr",
+    "body": ["GRAPHQL http://${1:localhost}:${2:80}/graphql", "", "query {", "  ${3:field}", "}", "", "###", "$0"],
+    "description": "GraphQL query"
+  }
+}

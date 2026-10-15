@@ -1,0 +1,233 @@
+{
+  "name": "http-client",
+  "displayName": "HTTP-Client (IntelliJ style)",
+  "description": "Run .http files with the syntax of the IntelliJ HTTP Client: environments, {{variables}}, pre-request and response handler scripts, client.test/assert, cookies, GraphQL.",
+  "version": "0.1.0",
+  "publisher": "eci99",
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eci99/vscode-http-client.git"
+  },
+  "bugs": {
+    "url": "https://github.com/eci99/vscode-http-client/issues"
+  },
+  "homepage": "https://github.com/eci99/vscode-http-client#readme",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Testing",
+    "Other"
+  ],
+  "keywords": [
+    "http",
+    "rest",
+    "intellij",
+    "http client",
+    "api"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:http-client",
+    "workspaceContains:**/*.http"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "http-client",
+        "aliases": [
+          "HTTP-Client Request",
+          "http-client"
+        ],
+        "extensions": [
+          ".http",
+          ".rest"
+        ],
+        "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "http-client-response",
+        "aliases": [
+          "HTTP Response"
+        ],
+        "extensions": [
+          ".http-response"
+        ]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "http-client",
+        "scopeName": "source.http-client",
+        "path": "./syntaxes/http.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.block.javascript": "javascript",
+          "meta.embedded.block.json": "json",
+          "meta.embedded.block.xml": "xml"
+        }
+      },
+      {
+        "language": "http-client-response",
+        "scopeName": "source.http-client-response",
+        "path": "./syntaxes/http-response.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.block.json": "json",
+          "meta.embedded.block.html": "html"
+        }
+      }
+    ],
+    "snippets": [
+      {
+        "language": "http-client",
+        "path": "./snippets/http.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "httpClient.sendRequest",
+        "title": "Send Request",
+        "category": "HTTP-Client",
+        "icon": "$(play)"
+      },
+      {
+        "command": "httpClient.runAll",
+        "title": "Run All Requests in File",
+        "category": "HTTP-Client",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "httpClient.resendLast",
+        "title": "Resend Last Request",
+        "category": "HTTP-Client",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "httpClient.pickRequest",
+        "title": "Pick and Send Request…",
+        "category": "HTTP-Client",
+        "icon": "$(list-selection)"
+      },
+      {
+        "command": "httpClient.selectEnvironment",
+        "title": "Select Environment",
+        "category": "HTTP-Client"
+      },
+      {
+        "command": "httpClient.copyAsCurl",
+        "title": "Copy Request as cURL",
+        "category": "HTTP-Client"
+      },
+      {
+        "command": "httpClient.createEnvFile",
+        "title": "Create Environment File",
+        "category": "HTTP-Client"
+      },
+      {
+        "command": "httpClient.showGlobals",
+        "title": "Show Global Variables",
+        "category": "HTTP-Client"
+      },
+      {
+        "command": "httpClient.clearGlobals",
+        "title": "Clear Global Variables",
+        "category": "HTTP-Client"
+      },
+      {
+        "command": "httpClient.clearCookies",
+        "title": "Clear Cookies",
+        "category": "HTTP-Client"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "httpClient.sendRequest",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r",
+        "when": "editorLangId == http-client"
+      },
+      {
+        "command": "httpClient.runAll",
+        "key": "ctrl+alt+shift+r",
+        "mac": "cmd+alt+shift+r",
+        "when": "editorLangId == http-client"
+      },
+      {
+        "command": "httpClient.resendLast",
+        "key": "ctrl+alt+shift+l",
+        "mac": "cmd+alt+shift+l"
+      },
+      {
+        "command": "httpClient.pickRequest",
+        "key": "ctrl+alt+shift+v",
+        "mac": "cmd+alt+shift+v"
+      },
+      {
+        "command": "httpClient.selectEnvironment",
+        "key": "ctrl+alt+shift+e",
+        "mac": "cmd+alt+shift+e"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "httpClient.runAll",
+          "when": "editorLangId == http-client",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "httpClient.sendRequest",
+          "when": "editorLangId == http-client",
+          "group": "http-client@1"
+        },
+        {
+          "command": "httpClient.copyAsCurl",
+          "when": "editorLangId == http-client",
+          "group": "http-client@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "HTTP-Client",
+      "properties": {
+        "httpClient.timeoutSeconds": {
+          "type": "number",
+          "default": 60,
+          "description": "Default request timeout in seconds (can be overridden per request with `# @timeout`)."
+        },
+        "httpClient.followRedirects": {
+          "type": "boolean",
+          "default": true,
+          "description": "Follow redirects by default (per request: `# @no-redirect`)."
+        },
+        "httpClient.responseViewColumn": {
+          "type": "string",
+          "enum": [
+            "beside",
+            "active"
+          ],
+          "default": "beside",
+          "description": "Where to show the response."
+        },
+        "httpClient.prettyPrintJson": {
+          "type": "boolean",
+          "default": true,
+          "description": "Pretty-print JSON responses."
+        },
+        "httpClient.saveAllBeforeRequest": {
+          "type": "boolean",
+          "default": true,
+          "description": "Save all modified files before a request is sent (untitled files are not saved)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "node test/run-tests.js",
+    "package": "vsce package"
+  }
+}
