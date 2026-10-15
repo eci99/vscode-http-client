@@ -1,5 +1,5 @@
 {
-  "name": "http-client",
+  "name": "http-client-ij-style",
   "displayName": "HTTP-Client (IntelliJ style)",
   "description": "Run .http files with the syntax of the IntelliJ HTTP Client: environments, {{variables}}, pre-request and response handler scripts, client.test/assert, cookies, GraphQL.",
   "version": "0.1.0",
