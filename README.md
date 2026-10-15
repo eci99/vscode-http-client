@@ -12,6 +12,26 @@ cookies and GraphQL.
 3. The response opens beside the editor, together with test results, script logs and the
    environment that was used.
 
+## Response tab
+
+All requests share one tab, *HTTP-Client: response*. It stays in the editor group where it is
+and is updated in place; it is only brought to the front when a request fails or returns a
+status of 400 or higher.
+
+Above every response:
+
+* **Open in viewer** opens the body in VS Code (pretty-printed JSON, images, PDFs); other binary
+  content opens in the default application.
+* **Open in browser** (HTML responses only).
+* **Save as…** saves the body to a file.
+
+## File references
+
+After `<`, `<@`, `>` and `>>`, file paths are completed relative to the `.http` file (for
+response handlers `>` only `.js` files are offered). Referenced files are clickable links, and a
+body file or script that does not exist is marked as an error. Paths that contain a
+`{{variable}}` are not checked.
+
 ```http
 @user = janos
 
