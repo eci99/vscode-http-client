@@ -153,7 +153,7 @@ const responseProvider = {
   provideTextDocumentContent: uri => responses.get(uri.toString()) || ''
 };
 
-const RESPONSE_URI = vscode.Uri.from({ scheme: RESPONSE_SCHEME, path: '/HTTP-Client: response' });
+const RESPONSE_URI = vscode.Uri.from({ scheme: RESPONSE_SCHEME, path: 'HTTP-Client: response' });
 
 function responseUriFor() {
   return RESPONSE_URI;
