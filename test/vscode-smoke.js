@@ -38,6 +38,9 @@ const makeDoc = (file, text) => ({
 const vscode = {
   Uri, EventEmitter,
   Range: class { constructor(...a) { this.a = a; } },
+  Diagnostic: class { constructor(range, message, severity) { this.range = range; this.message = message; this.severity = severity; } },
+  DiagnosticSeverity: { Error: 0 },
+  DocumentLink: class { constructor(range, target) { this.range = range; this.target = target; } },
   CodeLens: class { constructor(r, c) { this.range = r; this.command = c; } },
   CompletionItem: class { constructor(l, k) { this.label = l; this.kind = k; } },
   CompletionItemKind: { Variable: 1, Function: 2 },
@@ -47,13 +50,18 @@ const vscode = {
   env: { clipboard: { writeText: async t => { clipboard = t; } } },
   commands: { registerCommand: (id, f) => { commands[id] = f; return {}; } },
   languages: {
-    registerCodeLensProvider: (s, p) => { providers.codeLens = p; return {}; },
+    registerCodeLensProvider: (s, p) => { providers[s.language === 'http-client' ? 'codeLens' : 'responseLens'] = p; return {}; },
     registerCompletionItemProvider: (s, p) => { providers.completion = p; return {}; },
     registerHoverProvider: (s, p) => { providers.hover = p; return {}; },
+    registerDocumentLinkProvider: (s, p) => { providers.links = p; return {}; },
+    createDiagnosticCollection: () => {
+      providers.diagnostics = new Map();
+      return { set: (u, d) => providers.diagnostics.set(u.path, d), delete: u => providers.diagnostics.delete(u.path), dispose() {} };
+    },
     setTextDocumentLanguage: async d => d
   },
   window: {
-    activeTextEditor: null, visibleTextEditors: [],
+    activeTextEditor: null, visibleTextEditors: [], tabGroups: { all: [] },
     createOutputChannel: () => ({ lines: [], appendLine(l) { this.lines.push(l); }, show() {}, dispose() {} }),
     createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {} }),
     showTextDocument: async d => { shown.push(d); },
@@ -72,7 +80,10 @@ const vscode = {
     saveAll: async () => { vscode.workspace.saveAllCalls++; return true; },
     openTextDocument: async uri => ({ uri, languageId: 'http-client-response', getText: () => providers.content.provideTextDocumentContent(uri) }),
     registerTextDocumentContentProvider: (s, p) => { providers.content = p; return {}; },
-    createFileSystemWatcher: () => ({ onDidChange() {}, onDidCreate() {}, dispose() {} })
+    createFileSystemWatcher: () => ({ onDidChange() {}, onDidCreate() {}, onDidDelete() {}, dispose() {} }),
+    onDidOpenTextDocument: f => { providers.onOpen = f; return {}; },
+    onDidChangeTextDocument: () => ({}),
+    onDidCloseTextDocument: () => ({})
   }
 };
 
@@ -128,6 +139,30 @@ server.listen(0, '127.0.0.1', async () => {
 
     const hover = providers.hover.provideHover({ ...doc, getText: r => r ? r.text : text }, { line: 1, character: 15 });
     assert.ok(hover.contents.value.includes('environment'), hover.contents.value);
+
+    // Files after < <@ > and >>
+    fs.mkdirSync(path.join(dir, 'data'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'data', 'body.json'), '{}');
+    fs.writeFileSync(path.join(dir, 'handler.js'), '');
+    const fileLabels = (line) => {
+      const fileDoc = makeDoc(file, `GET http://x\n\n${line}`);
+      const found = providers.completion.provideCompletionItems(fileDoc, { line: 2, character: line.length });
+      return found && found.map(i => i.label).sort();
+    };
+    assert.deepStrictEqual(fileLabels('< ./').filter(l => l === 'data/' || l === 'handler.js'), ['data/', 'handler.js']);
+    assert.deepStrictEqual(fileLabels('<@ ./data/'), ['body.json']);
+    assert.ok(fileLabels('> ./').includes('handler.js') && !fileLabels('> ./').includes('api.http'));
+    assert.ok(fileLabels('>> ./').includes('api.http'));
+    assert.strictEqual(fileLabels('GET http://x'), undefined);
+    assert.deepStrictEqual(fileLabels('< ./missing/'), []);
+
+    // Links for files that exist, errors for those that do not
+    const refText = 'POST http://x\n\n< ./data/body.json\n< ./missing.json\n< {{dir}}/x.json\n\n> ./handler.js\n>> ./out/new.json\n';
+    const refDoc = makeDoc(path.join(dir, 'refs.http'), refText);
+    const links = providers.links.provideDocumentLinks(refDoc);
+    assert.deepStrictEqual(links.map(l => l.target.path), [path.join(dir, 'data', 'body.json'), path.join(dir, 'handler.js')]);
+    providers.onOpen(refDoc);
+    assert.deepStrictEqual(providers.diagnostics.get(refDoc.uri.path).map(d => d.message), ['File not found: ./missing.json']);
 
     await commands['httpClient.copyAsCurl']();
     assert.ok(clipboard.includes(`http://127.0.0.1:${port}/a`) && clipboard.includes('Authorization: s3'), clipboard);

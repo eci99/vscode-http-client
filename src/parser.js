@@ -63,7 +63,7 @@ function parse(text) {
 function readScript(L, i, prefixLen) {
   const first = L[i].text.trim().slice(prefixLen).trim();
   if (!first.startsWith('{%')) {
-    return { script: { file: first }, end: i };
+    return { script: { file: first, line: L[i].no }, end: i };
   }
   let rest = first.slice(2);
   const closeIdx = rest.indexOf('%}');
@@ -171,7 +171,7 @@ function parseBlock(block, fileVariables) {
       const t = raw.trim();
       if (HANDLER_START_RE.test(t) || RESPONSE_FILE_RE.test(t)) break;
       const fm = raw.match(BODY_FILE_RE);
-      if (fm) req.body.push({ type: 'file', path: fm[2].trim(), substitute: fm[1] === '@' });
+      if (fm) req.body.push({ type: 'file', path: fm[2].trim(), substitute: fm[1] === '@', line: L[i].no });
       else req.body.push({ type: 'text', value: raw });
     }
     // trim trailing empty lines
@@ -187,7 +187,7 @@ function parseBlock(block, fileVariables) {
     if (!t || (COMMENT_RE.test(t) && !t.startsWith('>'))) continue;
     let m;
     if ((m = t.match(RESPONSE_FILE_RE))) {
-      req.responseFile = { path: m[2].trim(), overwrite: m[1] === '!' };
+      req.responseFile = { path: m[2].trim(), overwrite: m[1] === '!', line: L[i].no };
       continue;
     }
     if (t.startsWith('>')) {

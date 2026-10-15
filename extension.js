@@ -463,9 +463,42 @@ function variableState(doc) {
   };
 }
 
+// A file after < (body or script), <@ (body with variables), > (response handler), or >> (save the response).
+const FILE_LINE_RE = /^\s*(<@?|>>!?|>)[ \t]+([^\s{%]*)$/;
+
+function fileCompletions(doc, pos, before) {
+  const m = FILE_LINE_RE.exec(before);
+  if (!m) return undefined;
+  const typed = m[2];
+  const dirPart = typed.slice(0, typed.lastIndexOf('/') + 1);
+  let entries;
+  try {
+    entries = fs.readdirSync(path.resolve(baseDirFor(doc), dirPart || '.'), { withFileTypes: true });
+  } catch (e) {
+    return [];
+  }
+  const range = new vscode.Range(pos.line, pos.character - (typed.length - dirPart.length), pos.line, pos.character);
+  const handler = m[1] === '>';
+  return entries
+    .filter(e => (typed.length > dirPart.length || !e.name.startsWith('.'))
+      && (!handler || e.isDirectory() || /\.[cm]?js$/.test(e.name)))
+    .map(e => {
+      const dir = e.isDirectory();
+      const label = dir ? `${e.name}/` : e.name;
+      const item = new vscode.CompletionItem(label, dir ? vscode.CompletionItemKind.Folder : vscode.CompletionItemKind.File);
+      item.insertText = label;
+      item.range = range;
+      item.sortText = `${dir ? 0 : 1}_${e.name.toLowerCase()}`;
+      if (dir) item.command = { command: 'editor.action.triggerSuggest', title: 'Suggest' };
+      return item;
+    });
+}
+
 const completionProvider = {
   provideCompletionItems(doc, pos) {
     const before = doc.lineAt(pos.line).text.slice(0, pos.character);
+    const files = fileCompletions(doc, pos, before);
+    if (files) return files;
     if (!/\{\{[^}]*$/.test(before)) return undefined;
     const { envs, state } = variableState(doc);
     const items = [];
@@ -484,6 +517,51 @@ const completionProvider = {
     return items;
   }
 };
+
+// The files that a document refers to with < <@ > and >>, with where the path is. A path with
+// a variable in it is not resolved.
+function fileReferences(doc) {
+  const parsed = parse(doc.getText());
+  const found = [];
+  for (const req of parsed.requests) {
+    for (const script of [...req.preScripts, ...req.handlers]) {
+      if (script.file !== undefined) found.push({ path: script.file, line: script.line });
+    }
+    for (const part of req.body) if (part.type === 'file') found.push({ path: part.path, line: part.line });
+    if (req.responseFile) found.push({ path: req.responseFile.path, line: req.responseFile.line, output: true });
+  }
+  const base = baseDirFor(doc);
+  return found.sort((a, b) => a.line - b.line).flatMap(ref => {
+    if (ref.path.includes('{{')) return [];
+    const text = doc.lineAt(ref.line).text;
+    const start = text.indexOf(ref.path);
+    if (start < 0) return [];
+    const target = path.resolve(base, ref.path);
+    return [{
+      ...ref, target, exists: fs.existsSync(target),
+      range: new vscode.Range(ref.line, start, ref.line, start + ref.path.length)
+    }];
+  });
+}
+
+const documentLinkProvider = {
+  provideDocumentLinks(doc) {
+    return fileReferences(doc).filter(ref => ref.exists).map(ref => {
+      const link = new vscode.DocumentLink(ref.range, vscode.Uri.file(ref.target));
+      link.tooltip = 'Open file';
+      return link;
+    });
+  }
+};
+
+// A file that is read has to exist; one that is written is created.
+function checkFiles(doc, diagnostics) {
+  if (doc.languageId !== LANG) return;
+  const missing = fileReferences(doc).filter(ref => !ref.exists && !ref.output).map(ref =>
+    new vscode.Diagnostic(ref.range, `File not found: ${ref.path}`, vscode.DiagnosticSeverity.Error));
+  if (missing.length) diagnostics.set(doc.uri, missing);
+  else diagnostics.delete(doc.uri);
+}
 
 const hoverProvider = {
   provideHover(doc, pos) {
@@ -515,18 +593,29 @@ function activate(context) {
   updateStatusBar();
 
   const selector = { language: LANG };
+  const diagnostics = vscode.languages.createDiagnosticCollection('http-client');
+  const checkAll = () => vscode.workspace.textDocuments.forEach(doc => checkFiles(doc, diagnostics));
+  checkAll();
   const envWatcher = vscode.workspace.createFileSystemWatcher('**/http-client*.env.json');
   envWatcher.onDidChange(() => codeLensEmitter.fire());
   envWatcher.onDidCreate(() => codeLensEmitter.fire());
+  // A file that was missing can appear, and one that was there can go.
+  const fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
+  fileWatcher.onDidCreate(checkAll);
+  fileWatcher.onDidDelete(checkAll);
 
   context.subscriptions.push(
-    output, statusBar, envWatcher,
+    output, statusBar, envWatcher, fileWatcher, diagnostics,
+    vscode.workspace.onDidOpenTextDocument(doc => checkFiles(doc, diagnostics)),
+    vscode.workspace.onDidChangeTextDocument(e => checkFiles(e.document, diagnostics)),
+    vscode.workspace.onDidCloseTextDocument(doc => diagnostics.delete(doc.uri)),
+    vscode.languages.registerDocumentLinkProvider(selector, documentLinkProvider),
     vscode.workspace.registerTextDocumentContentProvider(RESPONSE_SCHEME, responseProvider),
     vscode.languages.registerCodeLensProvider(selector, codeLensProvider),
     vscode.languages.registerCodeLensProvider({ language: 'http-client-response' }, responseLensProvider),
     vscode.commands.registerCommand('httpClient.openBody', openBody),
     vscode.commands.registerCommand('httpClient.saveBody', saveBody),
-    vscode.languages.registerCompletionItemProvider(selector, completionProvider, '{'),
+    vscode.languages.registerCompletionItemProvider(selector, completionProvider, '{', '/', ' '),
     vscode.languages.registerHoverProvider(selector, hoverProvider),
     vscode.window.onDidChangeActiveTextEditor(updateStatusBar),
     vscode.commands.registerCommand('httpClient.sendRequest', sendRequest),

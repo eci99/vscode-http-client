@@ -106,7 +106,7 @@ test('parser', () => {
   assert.strictEqual(auth.headers.length, 2);
   assert.strictEqual(file.body[0].type, 'file');
   assert.strictEqual(file.body[0].substitute, true);
-  assert.deepStrictEqual(file.responseFile, { path: './out/result.json', overwrite: false });
+  assert.deepStrictEqual(file.responseFile, { path: './out/result.json', overwrite: false, line: SAMPLE.split('\n').indexOf('>> ./out/result.json') });
   assert.strictEqual(redir.tags['no-redirect'], true);
   assert.strictEqual(gql.method, 'GRAPHQL');
   const lines = SAMPLE.split('\n');
