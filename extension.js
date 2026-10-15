@@ -158,13 +158,13 @@ function responseUriFor() {
   return RESPONSE_URI;
 }
 
-async function showResponse(doc, content, focus = false) {
+async function showResponse(doc, content, reveal = false) {
   const uri = responseUriFor(doc);
   responses.set(uri.toString(), content);
   responseEmitter.fire(uri);
   const group = vscode.window.tabGroups.all.find(g => g.tabs.some(t =>
     t.input instanceof vscode.TabInputText && t.input.uri.toString() === uri.toString()));
-  if (group && !focus) return;
+  if (group && !reveal) return;
   let rdoc = await vscode.workspace.openTextDocument(uri);
   if (rdoc.languageId !== 'http-client-response') {
     rdoc = await vscode.languages.setTextDocumentLanguage(rdoc, 'http-client-response');
@@ -173,7 +173,7 @@ async function showResponse(doc, content, focus = false) {
   await vscode.window.showTextDocument(rdoc, {
     viewColumn: group ? group.viewColumn
       : cfg.get('responseViewColumn') === 'active' ? vscode.ViewColumn.Active : vscode.ViewColumn.Beside,
-    preserveFocus: !focus,
+    preserveFocus: true,
     preview: false
   });
 }
