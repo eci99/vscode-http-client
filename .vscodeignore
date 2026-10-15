@@ -1,0 +1,9 @@
+.git/**
+.gitignore
+.vscode/**
+test/**
+examples.http
+images/icon.svg
+**/*.vsix
+**/*.map
+node_modules/**
