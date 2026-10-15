@@ -152,29 +152,28 @@ const responseProvider = {
   provideTextDocumentContent: uri => responses.get(uri.toString()) || ''
 };
 
-function responseUriFor(doc) {
-  const name = path.basename(doc.uri.path).replace(/\.(http|rest)$/, '') || 'Untitled';
-  return vscode.Uri.from({
-    scheme: RESPONSE_SCHEME,
-    path: `/${name} Response.http-response`,
-    query: encodeURIComponent(doc.uri.toString())
-  });
+const RESPONSE_URI = vscode.Uri.from({ scheme: RESPONSE_SCHEME, path: '/HTTP-Client: response' });
+
+function responseUriFor() {
+  return RESPONSE_URI;
 }
 
-async function showResponse(doc, content) {
+async function showResponse(doc, content, focus = false) {
   const uri = responseUriFor(doc);
   responses.set(uri.toString(), content);
   responseEmitter.fire(uri);
-  const existing = vscode.window.visibleTextEditors.find(e => e.document.uri.toString() === uri.toString());
-  if (existing) return;
+  const group = vscode.window.tabGroups.all.find(g => g.tabs.some(t =>
+    t.input instanceof vscode.TabInputText && t.input.uri.toString() === uri.toString()));
+  if (group && !focus) return;
   let rdoc = await vscode.workspace.openTextDocument(uri);
   if (rdoc.languageId !== 'http-client-response') {
     rdoc = await vscode.languages.setTextDocumentLanguage(rdoc, 'http-client-response');
   }
   const cfg = vscode.workspace.getConfiguration('httpClient');
   await vscode.window.showTextDocument(rdoc, {
-    viewColumn: cfg.get('responseViewColumn') === 'active' ? vscode.ViewColumn.Active : vscode.ViewColumn.Beside,
-    preserveFocus: true,
+    viewColumn: group ? group.viewColumn
+      : cfg.get('responseViewColumn') === 'active' ? vscode.ViewColumn.Active : vscode.ViewColumn.Beside,
+    preserveFocus: !focus,
     preview: false
   });
 }
@@ -255,6 +254,10 @@ async function execute(doc, requests) {
 
   const failed = results.flatMap(r => r.tests).filter(t => !t.passed).length;
   const errors = results.filter(r => r.error).length;
+  const badStatus = results.filter(r => !r.error && r.response && r.response.status >= 400).length;
+  if (errors || badStatus) {
+    await showResponse(doc, responses.get(responseUriFor(doc).toString()), true);
+  }
   if (errors) vscode.window.setStatusBarMessage(`$(error) HTTP-Client: ${errors} request(s) failed`, 5000);
   else if (failed) vscode.window.setStatusBarMessage(`$(warning) HTTP-Client: ${failed} test(s) failed`, 5000);
 }
