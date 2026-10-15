@@ -69,7 +69,8 @@ const vscode = {
     setStatusBarMessage: () => {}, showWarningMessage: m => { throw new Error('warning: ' + m); },
     showErrorMessage: m => { throw new Error('error: ' + m); }, showInformationMessage: async () => undefined,
     showQuickPick: async items => items.find(i => i.label.endsWith('B')),
-    onDidChangeActiveTextEditor: () => ({})
+    onDidChangeActiveTextEditor: () => ({}),
+    onDidChangeWindowState: () => ({})
   },
   workspace: {
     workspaceFolders: [{ uri: Uri.file(dir) }],
@@ -82,6 +83,9 @@ const vscode = {
     registerTextDocumentContentProvider: (s, p) => { providers.content = p; return {}; },
     createFileSystemWatcher: () => ({ onDidChange() {}, onDidCreate() {}, onDidDelete() {}, dispose() {} }),
     onDidOpenTextDocument: f => { providers.onOpen = f; return {}; },
+    onDidCreateFiles: () => ({}),
+    onDidDeleteFiles: () => ({}),
+    onDidRenameFiles: () => ({}),
     onDidChangeTextDocument: () => ({}),
     onDidCloseTextDocument: () => ({})
   }

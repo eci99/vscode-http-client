@@ -599,13 +599,15 @@ function activate(context) {
   const envWatcher = vscode.workspace.createFileSystemWatcher('**/http-client*.env.json');
   envWatcher.onDidChange(() => codeLensEmitter.fire());
   envWatcher.onDidCreate(() => codeLensEmitter.fire());
-  // A file that was missing can appear, and one that was there can go.
-  const fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
-  fileWatcher.onDidCreate(checkAll);
-  fileWatcher.onDidDelete(checkAll);
 
   context.subscriptions.push(
-    output, statusBar, envWatcher, fileWatcher, diagnostics,
+    output, statusBar, envWatcher, diagnostics,
+    // A missing file can appear, and one that was there can go; there is no watcher for that.
+    vscode.workspace.onDidCreateFiles(checkAll),
+    vscode.workspace.onDidDeleteFiles(checkAll),
+    vscode.workspace.onDidRenameFiles(checkAll),
+    vscode.window.onDidChangeWindowState(state => { if (state.focused) checkAll(); }),
+    vscode.window.onDidChangeActiveTextEditor(checkAll),
     vscode.workspace.onDidOpenTextDocument(doc => checkFiles(doc, diagnostics)),
     vscode.workspace.onDidChangeTextDocument(e => checkFiles(e.document, diagnostics)),
     vscode.workspace.onDidCloseTextDocument(doc => diagnostics.delete(doc.uri)),
