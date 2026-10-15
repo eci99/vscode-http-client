@@ -64,20 +64,6 @@
           "light": "./images/icon.svg",
           "dark": "./images/icon.svg"
         }
-      },
-      {
-        "id": "http-client-env",
-        "aliases": [
-          "HTTP Client Environment"
-        ],
-        "filenamePatterns": [
-          "http-client*.env.json"
-        ],
-        "configuration": "./env-language-configuration.json",
-        "icon": {
-          "light": "./images/icon.svg",
-          "dark": "./images/icon.svg"
-        }
       }
     ],
     "grammars": [
@@ -99,11 +85,6 @@
           "meta.embedded.block.json": "json",
           "meta.embedded.block.html": "html"
         }
-      },
-      {
-        "language": "http-client-env",
-        "scopeName": "source.http-client-env",
-        "path": "./syntaxes/http-client-env.tmLanguage.json"
       }
     ],
     "snippets": [
