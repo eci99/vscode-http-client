@@ -7,3 +7,4 @@ images/icon.svg
 **/*.vsix
 **/*.map
 node_modules/**
+images/demo.gif

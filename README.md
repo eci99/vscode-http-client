@@ -5,12 +5,37 @@ request files from IntelliJ/WebStorm/PhpStorm work unchanged in VS Code: environ
 `{{variables}}`, pre-request and response handler scripts, `client.test` / `client.assert`,
 cookies and GraphQL.
 
+> **Author's note:** I mainly built this extension to keep using the environment and `.http`
+> files I already had for the IntelliJ HTTP Client, so there is little support for writing
+> these files from scratch. I also use it in a fire-and-forget way, just to send requests
+> quickly, and that is what it is designed for.
+
+![Selecting an environment and sending requests](images/demo.gif)
+
 ## Quick start
 
 1. Open or create a `.http` file.
 2. Click **▶ Send Request** above a request (or press `Ctrl+Alt+R`).
 3. The response opens beside the editor, together with test results, script logs and the
    environment that was used.
+
+## Example
+
+```http
+### Get a post
+GET https://jsonplaceholder.typicode.com/posts/1
+Accept: application/json
+
+### Create a post
+POST https://jsonplaceholder.typicode.com/posts
+Content-Type: application/json
+
+{
+  "title": "Hello",
+  "body": "Sent from VS Code",
+  "userId": 1
+}
+```
 
 ## Response tab
 

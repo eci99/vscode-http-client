@@ -3,6 +3,13 @@
 All notable changes to this extension are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.2] – 2026-10-16
+
+### Changed
+
+- README: demo GIF showing environment selection and sending requests, a simple GET/POST
+  example and an author's note.
+
 ## [0.1.1] – 2026-10-16
 
 ### Added
