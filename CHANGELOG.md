@@ -10,6 +10,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - [examples/](examples): ready-to-run `.http` files (basics, variables, scripts, authentication,
   files, tags, GraphQL) with public and private environment files, data files and scripts.
 
+### Fixed
+
+- Cookies set by a redirect response are stored in the cookie jar, sent to the redirect target and
+  returned by `response.cookies()`. Redirects are now followed by the extension itself (up to 20;
+  `303`, and `301`/`302` after `POST`, continue as `GET`; `Authorization` is not sent to another
+  origin).
+
 ## [0.1.4] – 2026-10-18
 
 ### Added

@@ -498,7 +498,7 @@ and `value()` (both with variables resolved).
 | `response.headers.valuesOf(name)` | All values of the header; an empty array if there is none. |
 | `response.contentType.mimeType` | e.g. `application/json`, or `null`. |
 | `response.contentType.charset` | e.g. `utf-8`, or `null`. |
-| `response.cookies()` | All cookies from `Set-Cookie` headers. |
+| `response.cookies()` | All cookies from `Set-Cookie` headers, including those of redirect responses. |
 | `response.cookiesByName(name)` | The cookies with this name. |
 
 A cookie has `name` and `value`, and – if the server sent them – `domain`, `path`, `expires`,
@@ -590,6 +590,7 @@ Cookies from `Set-Cookie` headers are stored in a cookie jar and sent with later
 same domain and path, respecting `Domain`, `Path`, `Max-Age` and `Expires`. The jar is stored per
 workspace and survives a restart.
 
+* Cookies set by a redirect response are stored too, and sent to the redirect target.
 * A `Cookie:` header in the request replaces the cookies from the jar.
 * `# @no-cookie-jar` excludes a request from the jar.
 * **HTTP-Client: Clear Cookies** empties the jar.
@@ -612,6 +613,9 @@ workspace and survives a restart.
 * **Pick and send** lists the requests of the active `.http` file – or, if none is active, of
   the file of the last request – with name or title, method and URL. The last sent request is
   marked.
+* **Redirects** are followed up to 20 times (unless `# @no-redirect`). After `303`, and after
+  `301`/`302` for a `POST`, the request continues as `GET` without a body. The `Authorization`
+  header is not sent to another origin. The response tab shows the final response.
 * **Copy as cURL** copies the request with variables resolved. Pre-request scripts are not run
   for it.
 

@@ -6,6 +6,10 @@ const { substitute, makeResolver } = require('./variables');
 const { createSandbox, runScript } = require('./scripting');
 
 const STRIPPED_HEADERS = new Set(['host', 'content-length', 'connection', 'transfer-encoding', 'keep-alive']);
+const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
+const MAX_REDIRECTS = 20;
+
+const getSetCookie = headers => (typeof headers.getSetCookie === 'function' ? headers.getSetCookie() : []);
 
 function parseDuration(v, fallbackMs) {
   if (v === undefined || v === true) return fallbackMs;
@@ -189,7 +193,8 @@ async function runRequest(req, ctx) {
       headers.append(h.name, h.value);
     }
     const useJar = ctx.cookieJar && !req.tags['no-cookie-jar'];
-    if (useJar && !headers.has('cookie')) {
+    const userCookie = headers.has('cookie');
+    if (useJar && !userCookie) {
       const c = ctx.cookieJar.header(built.url);
       if (c) headers.set('Cookie', c);
     }
@@ -211,16 +216,38 @@ async function runRequest(req, ctx) {
     if (connectionTimer) signals.push(connection.signal);
 
     const doFetch = ctx.fetch || fetch;
+    const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
     const started = performance.now();
+    // Redirects are followed here instead of by fetch, so that cookies set by a redirect
+    // response reach the cookie jar and response.cookies().
+    let url = built.url;
+    let method = built.method;
+    const redirectCookies = [];
     let res;
     try {
-      res = await doFetch(built.url, {
-        method: built.method,
-        headers,
-        body,
-        redirect: followRedirects ? 'follow' : 'manual',
-        signal: signals.length > 1 ? AbortSignal.any(signals) : signals[0]
-      });
+      for (let hops = 0; ; hops++) {
+        res = await doFetch(url, { method, headers, body, redirect: 'manual', signal });
+        const location = res.headers.get('location');
+        if (!followRedirects || !REDIRECT_STATUS.has(res.status) || !location) break;
+        if (hops >= MAX_REDIRECTS) throw new Error(`More than ${MAX_REDIRECTS} redirects`);
+        await res.arrayBuffer();
+        const hopCookies = getSetCookie(res.headers);
+        redirectCookies.push(...hopCookies);
+        if (useJar && hopCookies.length) ctx.cookieJar.store(url, hopCookies);
+        const next = new URL(location, url).toString();
+        // As browsers do: 303, and 301/302 after POST, continue with GET and without a body
+        if (res.status === 303 || ((res.status === 301 || res.status === 302) && method === 'POST')) {
+          if (method !== 'HEAD') method = 'GET';
+          body = undefined;
+          headers.delete('content-type');
+        }
+        if (new URL(next).origin !== new URL(url).origin) headers.delete('authorization');
+        if (useJar && !userCookie) {
+          const c = ctx.cookieJar.header(next);
+          if (c) headers.set('Cookie', c); else headers.delete('cookie');
+        }
+        url = next;
+      }
     } finally {
       clearTimeout(connectionTimer);
     }
@@ -229,9 +256,9 @@ async function runRequest(req, ctx) {
 
     const resHeaders = [];
     res.headers.forEach((value, name) => { if (name !== 'set-cookie') resHeaders.push({ name, value }); });
-    const setCookies = typeof res.headers.getSetCookie === 'function' ? res.headers.getSetCookie() : [];
+    const setCookies = getSetCookie(res.headers);
     setCookies.forEach(value => resHeaders.push({ name: 'set-cookie', value }));
-    if (useJar && setCookies.length) ctx.cookieJar.store(res.url || built.url, setCookies);
+    if (useJar && setCookies.length) ctx.cookieJar.store(url, setCookies);
 
     const ct = parseContentType(res.headers.get('content-type'));
     const text = decodeBody(buf, ct.charset);
@@ -242,8 +269,10 @@ async function runRequest(req, ctx) {
     result.response = {
       status: res.status,
       statusText: res.statusText,
-      url: res.url || built.url,
+      url,
       headers: resHeaders,
+      // Set-Cookie of the redirects and the final response, for response.cookies()
+      setCookies: [...redirectCookies, ...setCookies],
       bodyBuffer: buf,
       text,
       parsedBody,

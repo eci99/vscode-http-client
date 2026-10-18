@@ -27,6 +27,13 @@ const server = http.createServer((req, res) => {
       return res.end(JSON.stringify({ token: 'tok-' + JSON.parse(body).user }));
     }
     if (url.pathname === '/redirect') { res.statusCode = 302; res.setHeader('Location', '/echo'); return res.end(); }
+    if (url.pathname === '/cookie-redirect') {
+      res.statusCode = 302;
+      res.setHeader('Set-Cookie', 'flash=hi; Path=/');
+      res.setHeader('Location', '/echo?from=redirect');
+      return res.end();
+    }
+    if (url.pathname === '/loop') { res.statusCode = 307; res.setHeader('Location', '/loop'); return res.end(); }
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({
       method: req.method, path: url.pathname, query: Object.fromEntries(url.searchParams),
@@ -244,6 +251,36 @@ GET http://127.0.0.1:${port}/echo?x=a%20b
   assert.strictEqual(second.error, null, second.error);
   assert.strictEqual(second.response.parsedBody.headers['x-global'], 'g1', 'global header sent');
   assert.strictEqual(second.response.parsedBody.query.x, 'a b');
+});
+
+test('redirects: cookies of redirect responses, POST becomes GET, loops', async () => {
+  const port = server.address().port;
+  const p = parse(`POST http://127.0.0.1:${port}/cookie-redirect
+Content-Type: application/json
+
+{"a": 1}
+
+> {% client.log(response.cookies().map(c => c.name).join(",")); %}
+
+###
+GET http://127.0.0.1:${port}/echo
+
+###
+GET http://127.0.0.1:${port}/loop
+`);
+  const ctx = { fileVars: {}, envVars: {}, globals: {}, baseDir: tmp, cookieJar: new CookieJar(), timeoutMs: 5000 };
+  const first = await runRequest(p.requests[0], ctx);
+  assert.strictEqual(first.error, null, first.error);
+  assert.strictEqual(first.response.status, 200);
+  assert.strictEqual(first.response.parsedBody.method, 'GET', 'POST becomes GET after 302');
+  assert.deepStrictEqual(first.response.parsedBody.query, { from: 'redirect' });
+  assert.strictEqual(first.response.parsedBody.headers.cookie, 'flash=hi', 'cookie sent to the redirect target');
+  assert.ok(first.response.url.endsWith('/echo?from=redirect'));
+  assert.deepStrictEqual(first.logs, ['flash']);
+  const second = await runRequest(p.requests[1], ctx);
+  assert.strictEqual(second.response.parsedBody.headers.cookie, 'flash=hi', 'cookie stored in the jar');
+  const loop = await runRequest(p.requests[2], ctx);
+  assert.ok(/More than 20 redirects/.test(loop.error), loop.error);
 });
 
 test('intellisense: context at the cursor', () => {

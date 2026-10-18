@@ -11,13 +11,12 @@ GET {{baseUrl}}/redirect/2
 # @no-redirect
 GET {{baseUrl}}/redirect/2
 
-### Cookies: the server sets a cookie, the jar stores it
-# The cookie comes with a redirect; @no-redirect keeps that response, so its Set-Cookie is seen.
-# @no-redirect
+### Cookies: the server sets a cookie (with a redirect to /cookies), the jar stores it
 GET {{baseUrl}}/cookies/set?session=abc123
 
 > {%
-  client.log("cookies:", response.cookies());
+  client.log("set by the server:", response.cookies());
+  client.log("sent back after the redirect:", response.body.cookies);
 %}
 
 ### The stored cookie is sent automatically

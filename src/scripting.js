@@ -320,7 +320,9 @@ function createSandbox(opts) {
   }
 
   if (response) {
-    const cookies = () => parseSetCookies(response.headers);
+    const cookies = () => parseSetCookies(response.setCookies
+      ? response.setCookies.map(value => ({ name: 'set-cookie', value }))
+      : response.headers);
     sandbox.response = {
       status: response.status,
       body: response.parsedBody,
