@@ -198,21 +198,57 @@ const responseLensProvider = {
   }
 };
 
-async function openBody(idx, external) {
-  const res = bodies[idx];
-  if (!res) return;
+// "Open in viewer" always writes to the same file, so its tab shows the latest response.
+let viewerDir;
+
+function canViewInVsCode(res) {
+  return !isBinaryResponse(res) || /^image\/|application\/pdf/.test(res.mimeType || '');
+}
+
+function writeViewerFile(res) {
+  if (!viewerDir) viewerDir = fs.mkdtempSync(path.join(os.tmpdir(), 'http-client-'));
+  // The extension decides how VS Code shows the file, so it follows the content type.
+  const file = path.join(viewerDir, `response${extForMime(res.mimeType)}`);
   const binary = isBinaryResponse(res);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'http-client-'));
-  const file = path.join(dir, `response-${idx + 1}${extForMime(res.mimeType)}`);
   const pretty = !binary && typeof res.parsedBody === 'object' && res.parsedBody !== null
     ? JSON.stringify(res.parsedBody, null, 2) : res.text;
   fs.writeFileSync(file, binary ? res.bodyBuffer : pretty);
-  const uri = vscode.Uri.file(file);
-  if (!external && (!binary || /^image\/|application\/pdf/.test(res.mimeType || ''))) {
-    await vscode.commands.executeCommand('vscode.open', uri, { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true, preview: false });
-  } else {
-    await vscode.env.openExternal(uri);
-  }
+  return vscode.Uri.file(file);
+}
+
+// Open tabs showing a viewer file (text editor, image or PDF preview).
+function viewerTabs() {
+  if (!viewerDir) return [];
+  return vscode.window.tabGroups.all.flatMap(g => g.tabs).filter(t =>
+    t.input && t.input.uri instanceof vscode.Uri && t.input.uri.scheme === 'file' &&
+    path.dirname(t.input.uri.fsPath) === viewerDir);
+}
+
+// Shows the file where the viewer already is, and closes viewer tabs of another
+// content type (e.g. an image tab when the latest response is JSON).
+async function showInViewer(uri) {
+  const tabs = viewerTabs();
+  const viewColumn = tabs.length ? tabs[0].group.viewColumn : vscode.ViewColumn.Beside;
+  await vscode.commands.executeCommand('vscode.open', uri, { viewColumn, preserveFocus: true, preview: false });
+  const stale = tabs.filter(t => t.input.uri.fsPath !== uri.fsPath);
+  if (stale.length) await vscode.window.tabGroups.close(stale, true);
+}
+
+async function openBody(idx, external) {
+  const res = bodies[idx];
+  if (!res) return;
+  const uri = writeViewerFile(res);
+  if (!external && canViewInVsCode(res)) await showInViewer(uri);
+  else await vscode.env.openExternal(uri);
+}
+
+// After a run, an open viewer tab switches to the last response. VS Code reloads
+// a file that changes on disk, so only a different content type needs a new tab.
+async function refreshViewer() {
+  const res = bodies[bodies.length - 1];
+  if (!res || !canViewInVsCode(res) || !viewerTabs().length) return;
+  const uri = writeViewerFile(res);
+  if (!viewerTabs().some(t => t.input.uri.fsPath === uri.fsPath)) await showInViewer(uri);
 }
 
 async function saveBody(idx) {
@@ -317,6 +353,7 @@ async function execute(doc, requests) {
       }
     });
   persistState();
+  await refreshViewer();
 
   const failed = results.flatMap(r => r.tests).filter(t => !t.passed).length;
   const errors = results.filter(r => r.error).length;

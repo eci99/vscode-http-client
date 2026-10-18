@@ -12,6 +12,8 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'http-client-ws-'));
 const commands = {};
 const providers = {};
 const shown = [];
+const opened = [];
+let hits = 0;
 let clipboard = '';
 const state = new Map();
 
@@ -36,7 +38,7 @@ const makeDoc = (file, text) => ({
 });
 
 const vscode = {
-  Uri, EventEmitter,
+  Uri, EventEmitter, TabInputText: class {},
   Range: class { constructor(...a) { this.a = a; } },
   Diagnostic: class { constructor(range, message, severity) { this.range = range; this.message = message; this.severity = severity; } },
   DiagnosticSeverity: { Error: 0 },
@@ -48,7 +50,15 @@ const vscode = {
   Hover: class { constructor(c) { this.contents = c; } },
   StatusBarAlignment: { Right: 2 }, ViewColumn: { Beside: -2, Active: -1 }, ProgressLocation: { Window: 10 },
   env: { clipboard: { writeText: async t => { clipboard = t; } } },
-  commands: { registerCommand: (id, f) => { commands[id] = f; return {}; } },
+  commands: {
+    registerCommand: (id, f) => { commands[id] = f; return {}; },
+    executeCommand: async (id, uri) => {
+      if (id !== 'vscode.open') return;
+      opened.push(uri.fsPath);
+      const group = { viewColumn: 2 };
+      vscode.window.tabGroups.all = [{ ...group, tabs: [{ input: { uri }, group }] }];
+    }
+  },
   languages: {
     registerCodeLensProvider: (s, p) => { providers[s.language === 'http-client' ? 'codeLens' : 'responseLens'] = p; return {}; },
     registerCompletionItemProvider: (s, p) => { providers.completion = p; return {}; },
@@ -97,7 +107,7 @@ require.cache.vscode = { id: 'vscode', filename: 'vscode', loaded: true, exports
 
 const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json');
-  res.end(JSON.stringify({ path: req.url, auth: req.headers.authorization || null }));
+  res.end(JSON.stringify({ path: req.url, auth: req.headers.authorization || null, hit: ++hits }));
 });
 
 server.listen(0, '127.0.0.1', async () => {
@@ -167,6 +177,17 @@ server.listen(0, '127.0.0.1', async () => {
     assert.deepStrictEqual(links.map(l => l.target.path), [path.join(dir, 'data', 'body.json'), path.join(dir, 'handler.js')]);
     providers.onOpen(refDoc);
     assert.deepStrictEqual(providers.diagnostics.get(refDoc.uri.path).map(d => d.message), ['File not found: ./missing.json']);
+
+    // "Open in viewer" reuses one file; while its tab is open, it follows new runs
+    await commands['httpClient.openBody'](0);
+    assert.strictEqual(opened.length, 1);
+    assert.strictEqual(path.basename(opened[0]), 'response.json');
+    const before = fs.readFileSync(opened[0], 'utf8');
+    await commands['httpClient.resendLast']();
+    assert.strictEqual(opened.length, 1, 'same content type: the open tab is reused');
+    assert.notStrictEqual(fs.readFileSync(opened[0], 'utf8'), before);
+    await commands['httpClient.openBody'](0);
+    assert.deepStrictEqual(opened, [opened[0], opened[0]]);
 
     await commands['httpClient.copyAsCurl']();
     assert.ok(clipboard.includes(`http://127.0.0.1:${port}/a`) && clipboard.includes('Authorization: s3'), clipboard);

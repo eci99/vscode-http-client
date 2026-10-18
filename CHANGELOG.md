@@ -3,6 +3,14 @@
 All notable changes to this extension are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.3] – 2026-10-18
+
+### Changed
+
+- **Open in viewer** always writes to the same file instead of a new temporary file per click.
+  Its tab is reused and, while it is open, updates to the last response after every run. When the
+  content type changes (e.g. from an image to JSON), the tab is replaced.
+
 ## [0.1.2] – 2026-10-16
 
 ### Changed

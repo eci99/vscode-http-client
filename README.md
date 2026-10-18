@@ -46,7 +46,8 @@ status of 400 or higher.
 Above every response:
 
 * **Open in viewer** opens the body in VS Code (pretty-printed JSON, images, PDFs); other binary
-  content opens in the default application.
+  content opens in the default application. The viewer always uses the same file, so its tab is
+  reused and, while it is open, shows the last response of every new run.
 * **Open in browser** (HTML responses only).
 * **Save as…** saves the body to a file.
 
