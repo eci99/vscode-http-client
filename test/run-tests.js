@@ -11,6 +11,7 @@ const { runRequest, buildRequest, toCurl } = require('../src/runner');
 const { CookieJar } = require('../src/cookies');
 const { formatResults } = require('../src/format');
 const { resolveDynamic } = require('../src/variables');
+const intellisense = require('../src/intellisense');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'http-client-'));
 fs.writeFileSync(path.join(tmp, 'payload.json'), '{"from":"file","user":"{{user}}"}');
@@ -122,6 +123,15 @@ test('dynamic variables', () => {
   assert.strictEqual(typeof resolveDynamic('$timestamp'), 'number');
 });
 
+test('variable precedence: environment > global > in-place > request', () => {
+  const { makeResolver } = require('../src/variables');
+  const all = { envVars: { v: 'env' }, globals: { v: 'global' }, fileVars: { v: 'file' }, requestVars: { v: 'request' } };
+  assert.strictEqual(makeResolver(all)('v'), 'env');
+  assert.strictEqual(makeResolver({ ...all, envVars: {} })('v'), 'global');
+  assert.strictEqual(makeResolver({ ...all, envVars: {}, globals: {} })('v'), 'file');
+  assert.strictEqual(makeResolver({ requestVars: { v: 'request' } })('v'), 'request');
+});
+
 test('runner end-to-end', async () => {
   const port = server.address().port;
   const p = parse(SAMPLE);
@@ -180,6 +190,124 @@ test('connection error is reported', async () => {
     fileVars: {}, envVars: {}, globals: {}, baseDir: tmp, cookieJar: new CookieJar(), timeoutMs: 2000
   });
   assert.ok(r.error && /fetch failed|ECONNREFUSED/.test(r.error), r.error);
+});
+
+test('IntelliJ features: tags, global headers, client.variables, cookies, jwt', async () => {
+  const port = server.address().port;
+  const text = `@fileVar = from-file
+
+### First
+# @name = first
+< {%
+  client.global.headers.set("X-Global", "g1");
+  client.variables.global.set("gv", client.variables.file.get("fileVar"));
+  client.log(typeof $uuid, $uuid.length, btoa("hi"), atob("aGk="), new URLSearchParams({ a: 1 }).toString());
+  const token = jwt.sign({ sub: "me" }, "secret", { expiresIn: "1h", audience: "x" });
+  client.log(jwt.verify(token, "secret", { algorithm: "HS256", audience: "x" }).sub, jwt.decode(token).header.alg);
+  client.log(crypto.hmac.sha3("256").withTextSecret("k").updateWithText("m").digest().toHex().length);
+%}
+POST http://127.0.0.1:${port}/login?q=a b@c&ok=%40
+Authorization: Basic user secret
+Content-Type: application/json
+
+{"user": "{{gv}}"}
+
+> {%
+  client.log(request.url(), request.headers.findByName("content-type").value());
+  client.log(response.cookies()[0].name, response.cookiesByName("session")[0].httpOnly);
+%}
+
+### Second
+# @no-auto-encoding
+# @connection-timeout 5 s
+GET http://127.0.0.1:${port}/echo?x=a%20b
+`;
+  const p = parse(text);
+  assert.strictEqual(p.requests[0].name, 'first');
+  const globalHeaders = {};
+  const ctx = {
+    fileVars: p.fileVariables, envVars: {}, globals: {}, globalHeaders,
+    baseDir: tmp, cookieJar: new CookieJar(), timeoutMs: 5000
+  };
+  const first = await runRequest(p.requests[0], ctx);
+  assert.strictEqual(first.error, null, first.error);
+  assert.deepStrictEqual(first.logs.slice(0, 3), ['string 36 aGk= hi a=1', 'me HS256', '64']);
+  assert.ok(first.request.url.endsWith('/login?q=a%20b%40c&ok=%40'), first.request.url);
+  assert.ok(first.logs[3].endsWith('/login?q=a b@c&ok=%40 application/json'), first.logs[3]);
+  assert.strictEqual(first.logs[4], 'session true');
+  const auth = first.request.headers.find(h => h.name === 'Authorization').value;
+  assert.strictEqual(auth, `Basic ${Buffer.from('user:secret').toString('base64')}`);
+  assert.strictEqual(ctx.globals.gv, 'from-file');
+  assert.deepStrictEqual(globalHeaders, { 'X-Global': 'g1' });
+
+  const second = await runRequest(p.requests[1], ctx);
+  assert.strictEqual(second.error, null, second.error);
+  assert.strictEqual(second.response.parsedBody.headers['x-global'], 'g1', 'global header sent');
+  assert.strictEqual(second.response.parsedBody.query.x, 'a b');
+});
+
+test('intellisense: context at the cursor', () => {
+  const text = '### A\n# @na\n@host = x\nPO\n\n### B\nGET http://x\n  ?a=1\nContent-Type: appl\nAcc\n\n{"a":1}\n\n> {%\nclient.global.\n%}\n';
+  const lines = text.split('\n');
+  const at = (no, col = lines[no].length) => intellisense.contextAt(lines, no, col);
+  assert.deepStrictEqual(at(1), { kind: 'tag', typed: 'na' });
+  assert.deepStrictEqual(at(3), { kind: 'requestStart', typed: 'PO' });
+  assert.strictEqual(at(6).kind, 'other', 'request line');
+  assert.strictEqual(at(7).kind, 'other', 'URL continuation');
+  assert.deepStrictEqual(at(8), { kind: 'headerValue', name: 'Content-Type', typed: 'appl' });
+  assert.deepStrictEqual(at(9), { kind: 'headerName', typed: 'Acc' });
+  assert.strictEqual(at(11).kind, 'other', 'body');
+  assert.deepStrictEqual(at(14), { kind: 'script', scriptKind: 'handler', before: 'client.global.' });
+  assert.strictEqual(at(15).kind, 'other', 'after the script');
+  assert.deepStrictEqual(intellisense.contextAt(['< {% req'], 0, 8), { kind: 'script', scriptKind: 'pre', before: ' req' });
+});
+
+test('intellisense: script API', () => {
+  const names = (before, kind = 'handler') => {
+    const found = intellisense.scriptCompletions(before, kind);
+    return found && (found.members ? Object.keys(found.members) : found);
+  };
+  assert.ok(names('').includes('response') && !names('', 'pre').includes('response'));
+  assert.deepStrictEqual(names('client.global.'), ['set', 'get', 'isEmpty', 'clear', 'clearAll', 'headers']);
+  assert.deepStrictEqual(names('request.headers.findByName("a").'), ['name', 'getRawValue', 'tryGetSubstitutedValue', 'value']);
+  assert.deepStrictEqual(intellisense.contextAt(['GET http://x H'], 0, 14), { kind: 'httpVersion', typed: 'H' });
+  assert.ok(names('const id = response.headers.va').includes('valueOf'));
+  assert.ok(names('crypto.hmac.sha256().withTextSecret(key).').includes('digest'));
+  assert.deepStrictEqual(names('crypto.sha256().updateWithText("x").digest().'), ['toHex', 'toBase64', 'bytes']);
+  assert.deepStrictEqual(names('client.global.get("to'), { names: 'global', typed: 'to' });
+  assert.deepStrictEqual(names('request.environment.get(\'ho'), { names: 'environment', typed: 'ho' });
+  assert.strictEqual(names('client.log("a.'), undefined, 'inside another string');
+  assert.strictEqual(names('foo.'), undefined, 'unknown object');
+  assert.strictEqual(intellisense.scriptEntryAt('client.global.set("a", 1)', 15, 'pre').entry.detail, 'set(name, value)');
+});
+
+test('intellisense: help and documentation links', () => {
+  const lines = ['### A', '# @no-log', '@host = x', 'POST http://x HTTP/2', 'Authorization: Basic u p', '', '>>! out.json'];
+  const help = (line, character) => {
+    const h = intellisense.helpAt(lines, line, character);
+    return h && [h.title, h.anchor];
+  };
+  assert.deepStrictEqual(help(0, 1), ['Request separator', 'separators-and-titles']);
+  assert.deepStrictEqual(help(1, 5), ['`# @no-log`', '4-tags']);
+  assert.deepStrictEqual(help(2, 1), ['In-place variable `host`', 'in-place-variables']);
+  assert.deepStrictEqual(help(3, 2), ['`POST` (HTTP method)', 'request-line']);
+  assert.deepStrictEqual(help(3, 17), ['`HTTP/2`', 'request-line']);
+  assert.deepStrictEqual(help(4, 3), ['`Authorization` (header)', 'headers']);
+  assert.deepStrictEqual(help(4, 18), ['`Basic`', 'basic-authentication']);
+  assert.deepStrictEqual(help(6, 1), ['Save the response body (overwrite)', 'saving-the-response-body']);
+  assert.strictEqual(help(3, 8), undefined, 'URL');
+  // Every script API entry links to a section that exists in the documentation
+  const docs = fs.readFileSync(path.join(__dirname, '..', 'docs', 'documentation.md'), 'utf8');
+  const anchors = new Set(docs.split('\n').filter(l => /^#{2,4} /.test(l)).map(l =>
+    l.replace(/^#+ /, '').toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s/g, '-')));
+  const walk = members => Object.values(members).forEach(e => {
+    assert.ok(anchors.has(e.anchor), `${e.detail}: #${e.anchor}`);
+    if (e.members) walk(e.members);
+  });
+  walk(intellisense.scriptCompletions('', 'handler').members);
+  for (const a of ['request-line', 'headers', 'basic-authentication', '4-tags', 'kinds-of-variables', 'dynamic-variables',
+    'separators-and-titles', 'in-place-variables', 'body-from-a-file', 'response-handlers', 'saving-the-response-body',
+    'multipart', 'form-data', 'graphql']) assert.ok(anchors.has(a), a);
 });
 
 server.listen(0, '127.0.0.1', async () => {

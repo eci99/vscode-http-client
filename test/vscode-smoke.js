@@ -39,6 +39,7 @@ const makeDoc = (file, text) => ({
 
 const vscode = {
   Uri, EventEmitter, TabInputText: class {},
+  SnippetString: class { constructor(v) { this.value = v; } },
   Range: class { constructor(...a) { this.a = a; } },
   Diagnostic: class { constructor(range, message, severity) { this.range = range; this.message = message; this.severity = severity; } },
   DiagnosticSeverity: { Error: 0 },
@@ -153,6 +154,19 @@ server.listen(0, '127.0.0.1', async () => {
 
     const hover = providers.hover.provideHover({ ...doc, getText: r => r ? r.text : text }, { line: 1, character: 15 });
     assert.ok(hover.contents.value.includes('environment'), hover.contents.value);
+
+    // Methods, headers and the script API
+    const isDoc = makeDoc(file, '### X\nPO\n\n### Y\nGET http://x\nContent-Type: \n\n> {%\nclient.global.get("\n%}\n');
+    const labels = (line, character) => (providers.completion.provideCompletionItems(isDoc, { line, character }) || []).map(i => i.label);
+    assert.ok(labels(1, 2).includes('POST'));
+    assert.ok(labels(5, 14).includes('application/json'));
+    assert.ok(labels(5, 0).includes('Content-Type'));
+    assert.deepStrictEqual(labels(8, 19), ['p'], 'global variables set by the handler above');
+    const apiDoc = makeDoc(file, 'GET http://x\n\n> {% client.te %}\n');
+    const api = providers.completion.provideCompletionItems(apiDoc, { line: 2, character: 14 });
+    assert.ok(api.some(i => i.label === 'test' && i.insertText.value.startsWith('test("')));
+    const apiHover = providers.hover.provideHover({ ...apiDoc, getText: r => r ? r.text : apiDoc.getText() }, { line: 2, character: 6 });
+    assert.ok(apiHover, 'hover on client');
 
     // Files after < <@ > and >>
     fs.mkdirSync(path.join(dir, 'data'), { recursive: true });

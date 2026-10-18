@@ -81,7 +81,29 @@ function buildRequest(req, state, baseDir, missing = new Set()) {
   if (url.startsWith('/') && host) url = `http://${host.value}${url}`;
   else if (!/^[a-z][a-z\d+.-]*:\/\//i.test(url)) url = `http://${url}`;
 
+  url = encodeQuery(url, !req.tags || !req.tags['no-auto-encoding']);
+  basicAuth(headers);
   return { method, url, headers, body };
+}
+
+/**
+ * Percent-encodes characters in the query that are not allowed there (e.g. space, @, #, $),
+ * keeping existing %XX escapes, like the IntelliJ HTTP Client. `# @no-auto-encoding` turns it off.
+ */
+function encodeQuery(url, enabled) {
+  const q = url.indexOf('?');
+  if (!enabled || q < 0) return url;
+  const encode = s => s.replace(/%(?![0-9a-f]{2})|[^A-Za-z0-9\-._~%!*'()+,;:/?]/gi, c => encodeURIComponent(c));
+  const query = url.slice(q + 1).split('&').map(pair => pair.split('=').map(encode).join('=')).join('&');
+  return `${url.slice(0, q)}?${query}`;
+}
+
+/** "Authorization: Basic user password" is sent Base64-encoded, as in the IntelliJ HTTP Client. */
+function basicAuth(headers) {
+  for (const h of headers) {
+    const m = h.name.toLowerCase() === 'authorization' && h.value.match(/^Basic\s+(\S+)\s+(.+)$/i);
+    if (m) h.value = `Basic ${Buffer.from(`${m[1]}:${m[2]}`).toString('base64')}`;
+  }
 }
 
 function parseContentType(value) {
@@ -115,7 +137,8 @@ function uniquePath(file) {
 
 /**
  * Execute one request including pre-request scripts and response handlers.
- * ctx: { fileVars, envVars, envName, globals, baseDir, cookieJar, timeoutMs, followRedirects, fetch? }
+ * ctx: { fileVars, envVars, envName, globals, globalHeaders?, projectRoot?, baseDir, cookieJar,
+ *        timeoutMs, followRedirects, fetch? }
  */
 async function runRequest(req, ctx) {
   const result = {
@@ -130,7 +153,13 @@ async function runRequest(req, ctx) {
   };
   const log = line => result.logs.push(line);
   const requestVars = {};
-  const state = { requestVars, fileVars: ctx.fileVars, globals: ctx.globals, envVars: ctx.envVars };
+  const state = {
+    requestVars, fileVars: ctx.fileVars, globals: ctx.globals, envVars: ctx.envVars, projectRoot: ctx.projectRoot
+  };
+  const globalHeaders = ctx.globalHeaders || {};
+  const sandboxOpts = {
+    globals: ctx.globals, globalHeaders, requestVars, fileVars: ctx.fileVars, envVars: ctx.envVars, envName: ctx.envName
+  };
   const resolveText = t => substitute(t, n => makeResolver(state)(n));
   const scriptRequest = {
     method: req.method, url: req.url, headers: req.headers, rawBody: rawBodyText(req), resolve: resolveText
@@ -140,15 +169,16 @@ async function runRequest(req, ctx) {
     // 1. Pre-request scripts
     for (const s of req.preScripts) {
       const { code, filename } = loadScript(s, ctx.baseDir);
-      runScript(code, createSandbox({
-        globals: ctx.globals, requestVars, envVars: ctx.envVars, envName: ctx.envName,
-        request: scriptRequest, tests: result.tests, log
-      }), filename);
+      runScript(code, createSandbox({ ...sandboxOpts, request: scriptRequest, tests: result.tests, log }), filename);
     }
 
     // 2. Build
     const missing = new Set();
     const built = buildRequest(req, state, ctx.baseDir, missing);
+    // Headers from client.global.headers.set(), unless the request sets them itself
+    for (const [name, value] of Object.entries(globalHeaders)) {
+      if (!built.headers.some(h => h.name.toLowerCase() === name.toLowerCase())) built.headers.push({ name, value });
+    }
     result.missing = [...missing];
     result.request = built;
 
@@ -170,16 +200,30 @@ async function runRequest(req, ctx) {
     }
     const followRedirects = req.tags['no-redirect'] ? false : ctx.followRedirects !== false;
     const timeoutMs = parseDuration(req.tags.timeout, ctx.timeoutMs || 60000);
+    // fetch cannot limit the connection phase alone; @connection-timeout limits the time
+    // until the response headers arrive.
+    const connectionMs = req.tags['connection-timeout'] !== undefined
+      ? parseDuration(req.tags['connection-timeout'], timeoutMs) : undefined;
+    const signals = [AbortSignal.timeout(timeoutMs)];
+    const connection = new AbortController();
+    const connectionTimer = connectionMs !== undefined &&
+      setTimeout(() => connection.abort(Object.assign(new Error('Connection timed out'), { name: 'TimeoutError' })), connectionMs);
+    if (connectionTimer) signals.push(connection.signal);
 
     const doFetch = ctx.fetch || fetch;
     const started = performance.now();
-    const res = await doFetch(built.url, {
-      method: built.method,
-      headers,
-      body,
-      redirect: followRedirects ? 'follow' : 'manual',
-      signal: AbortSignal.timeout(timeoutMs)
-    });
+    let res;
+    try {
+      res = await doFetch(built.url, {
+        method: built.method,
+        headers,
+        body,
+        redirect: followRedirects ? 'follow' : 'manual',
+        signal: signals.length > 1 ? AbortSignal.any(signals) : signals[0]
+      });
+    } finally {
+      clearTimeout(connectionTimer);
+    }
     const buf = Buffer.from(await res.arrayBuffer());
     const durationMs = Math.round(performance.now() - started);
 
@@ -213,8 +257,7 @@ async function runRequest(req, ctx) {
       const { code, filename } = loadScript(s, ctx.baseDir);
       try {
         runScript(code, createSandbox({
-          globals: ctx.globals, requestVars, envVars: ctx.envVars, envName: ctx.envName,
-          request: scriptRequest, response: result.response, tests: result.tests, log
+          ...sandboxOpts, request: scriptRequest, response: result.response, tests: result.tests, log
         }), filename);
       } catch (e) {
         result.tests.push({ name: 'Response handler', passed: false, error: e.message || String(e) });

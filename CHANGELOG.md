@@ -3,6 +3,46 @@
 All notable changes to this extension are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.4] – 2026-10-18
+
+### Added
+
+- IntelliSense depending on the cursor position: HTTP methods on the request line, tags after
+  `# @`, header names and typical header values (e.g. media types for `Content-Type`), and the
+  script API in `< {% %}` / `> {% %}` (`client`, `request`, `response`, `$random`, `crypto`,
+  `jsonPath`, `console`) with signatures, snippets and names of global or environment variables
+  in `client.global.get("…")` / `request.environment.get("…")`.
+- Hover documentation for the script API, header names and tags.
+- Features from the IntelliJ HTTP Client documentation:
+  - Tags `# @no-log`, `# @no-auto-encoding` and `# @connection-timeout`; `# @name = name`.
+  - Query parameters are percent-encoded automatically (space, `@`, `#`, `$` …; existing `%XX`
+    escapes are kept), unless the request has `# @no-auto-encoding`.
+  - `Authorization: Basic user password` is sent Base64-encoded.
+  - `client.global.headers.set/clear`: headers added to all following requests.
+  - `client.variables.global/file/request/environment`.
+  - `request.url()` / `request.body()` (resolved values, as in response handlers),
+    `request.headers.findByName(…)` with `getRawValue()`, `tryGetSubstitutedValue()` and `value()`.
+  - `response.cookies()` and `response.cookiesByName(name)`.
+  - `jwt.sign/verify/decode`, `crypto.sha3(bits)` / `crypto.hmac.sha3(bits)`, `btoa`/`atob`
+    (also `Window.btoa/atob`), `URLSearchParams`, and `$uuid`, `$timestamp`, `$isoTimestamp`,
+    `$randomInt`, `$env` in scripts.
+  - Dynamic variable `{{$projectRoot}}`.
+  - Completion of the HTTP version after the URL.
+- Full documentation in [docs/documentation.md](docs/documentation.md), linked from the README.
+  Suggestions and hovers link to the matching section; **HTTP-Client: Open Documentation**
+  opens it in VS Code. Hovers also explain HTTP methods and versions, `###`, in-place
+  variables, header values like `Basic`, the markers `<`, `<@`, `>`, `>>`, `>>!` and dynamic
+  variables; variable suggestions show the current value.
+
+### Changed
+
+- Variable precedence follows the IntelliJ HTTP Client documentation: environment →
+  `client.global` → in-place variables → `request.variables`. Before, it was the other way round.
+- The query is percent-encoded before sending; `#` in the query is data (`%23`), not a fragment.
+  Use `# @no-auto-encoding` for the previous behavior.
+- Request headers from `request.headers.all()` / `findByName()` have `value()` (a method, as
+  documented by JetBrains) instead of a `value` property.
+
 ## [0.1.3] – 2026-10-18
 
 ### Changed

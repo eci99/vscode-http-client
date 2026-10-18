@@ -9,6 +9,7 @@ const { runRequest, buildRequest, toCurl } = require('./src/runner');
 const { CookieJar } = require('./src/cookies');
 const { formatResults, STATUS_LINE, isBinaryResponse } = require('./src/format');
 const { DYNAMIC_VARIABLES, describeVariable } = require('./src/variables');
+const intellisense = require('./src/intellisense');
 
 const LANG = 'http-client';
 const RESPONSE_SCHEME = 'http-client-response';
@@ -21,6 +22,8 @@ let output;
 let statusBar;
 let cookieJar;
 let globals;
+// client.global.headers: kept in memory for the session only
+const globalHeaders = {};
 let lastRun; // { uri, line } for a single request, { uri, all: true } for "run all"
 
 // ------------------------------------------------------------------ environments
@@ -313,6 +316,8 @@ function makeContext(doc, parsed) {
     envName,
     envFound: envs.names.includes(envName),
     globals,
+    globalHeaders,
+    projectRoot: (vscode.workspace.getWorkspaceFolder(doc.uri) || { uri: { fsPath: baseDirFor(doc) } }).uri.fsPath,
     baseDir: baseDirFor(doc),
     cookieJar,
     timeoutMs: cfg.get('timeoutSeconds', 60) * 1000,
@@ -320,10 +325,11 @@ function makeContext(doc, parsed) {
   };
 }
 
-function logResult(r) {
+function logResult(r, req) {
   const ts = new Date().toLocaleTimeString();
   const status = r.error ? `ERROR ${r.error}` : `${r.response.status} ${r.response.statusText} (${r.response.durationMs} ms)`;
-  output.appendLine(`[${ts}] ${r.request ? `${r.request.method} ${r.request.url}` : r.title} → ${status}`);
+  // "# @no-log": the request itself is not written to the log, only the output of its scripts
+  if (!req.tags['no-log']) output.appendLine(`[${ts}] ${r.request ? `${r.request.method} ${r.request.url}` : r.title} → ${status}`);
   r.logs.forEach(l => output.appendLine(`    ${l}`));
   r.tests.forEach(t => output.appendLine(`    ${t.passed ? '✓' : '✗'} ${t.name}${t.passed ? '' : `: ${t.error}`}`));
 }
@@ -344,7 +350,7 @@ async function execute(doc, requests) {
       for (const req of requests) {
         const r = await runRequest(req, ctx);
         results.push(r);
-        logResult(r);
+        logResult(r, req);
         bodies = results.filter(x => x.response).map(x => x.response);
         responses.set(responseUriFor(doc).toString(),
           formatResults(results, { prettyJson: cfg.get('prettyPrintJson', true), environment }));
@@ -531,26 +537,109 @@ function fileCompletions(doc, pos, before) {
     });
 }
 
+// Variable names of all environments (including the shared "$shared" one).
+function environmentKeys(envs) {
+  const keys = new Set();
+  envs.names.forEach(n => Object.keys(envs.get(n)).forEach(k => keys.add(k)));
+  Object.keys(envs.get(null)).forEach(k => keys.add(k));
+  return keys;
+}
+
+const markdown = text => new vscode.MarkdownString(text);
+// Text with a link to the matching section of the documentation.
+const docMd = (text, anchor) => markdown(`${text}\n\n[📖 Documentation](${intellisense.docsUrl(anchor)})`);
+
+// Methods, tags, headers and the script API, depending on where the cursor is.
+function contextCompletions(doc, pos) {
+  const lines = doc.getText().split(/\r?\n/);
+  const ctx = intellisense.contextAt(lines, pos.line, pos.character);
+  const K = vscode.CompletionItemKind;
+  const rangeOf = typed => new vscode.Range(pos.line, pos.character - typed.length, pos.line, pos.character);
+  const item = (label, kind, range, props) => Object.assign(new vscode.CompletionItem(label, kind), { range }, props);
+
+  switch (ctx.kind) {
+    case 'requestStart': {
+      const range = rangeOf(ctx.typed);
+      return intellisense.METHODS.map((m, i) => item(m, K.Keyword, range, {
+        insertText: `${m} `, detail: 'HTTP method', sortText: String(i).padStart(2, '0'),
+        documentation: docMd(intellisense.METHOD_DOCS[m], 'request-line')
+      }));
+    }
+    case 'httpVersion': {
+      const range = rangeOf(ctx.typed);
+      return intellisense.HTTP_VERSIONS.map(v => item(v, K.Keyword, range, {
+        detail: 'HTTP version', documentation: docMd(intellisense.HTTP_VERSION_DOC, 'request-line')
+      }));
+    }
+    case 'tag': {
+      const range = rangeOf(ctx.typed);
+      return intellisense.TAGS.map(([name, example, doc]) => item(name, K.Keyword, range, {
+        insertText: /^(name|timeout|connection-timeout)$/.test(name) ? `${name} ` : name, detail: example, documentation: docMd(doc, '4-tags')
+      }));
+    }
+    case 'headerName': {
+      const range = rangeOf(ctx.typed);
+      // After the name, the values of the header are suggested right away.
+      const retrigger = { command: 'editor.action.triggerSuggest', title: 'Suggest values' };
+      return intellisense.HEADERS.map(([name, doc]) => item(name, K.Field, range, {
+        insertText: `${name}: `, detail: 'header', documentation: docMd(doc, 'headers'),
+        command: intellisense.HEADER_VALUES[name.toLowerCase()] ? retrigger : undefined
+      }));
+    }
+    case 'headerValue': {
+      const values = intellisense.HEADER_VALUES[ctx.name.toLowerCase()];
+      if (!values) return undefined;
+      const range = rangeOf(ctx.typed);
+      const docs = intellisense.HEADER_VALUE_DOCS[ctx.name.toLowerCase()] || {};
+      return values.map((v, i) => item(v, K.Value, range, {
+        sortText: String(i).padStart(2, '0'),
+        documentation: docs[v] ? docMd(docs[v][0], docs[v][1]) : undefined
+      }));
+    }
+    case 'script': {
+      const found = intellisense.scriptCompletions(ctx.before, ctx.scriptKind);
+      if (!found) return undefined;
+      const range = rangeOf(found.typed);
+      if (found.names) {
+        const names = found.names === 'global' ? Object.keys(globals) : [...environmentKeys(variableState(doc).envs)];
+        return names.map(n => item(n, K.Variable, range, {
+          detail: `${found.names} variable`, documentation: docMd(`\`${n}\``, 'kinds-of-variables')
+        }));
+      }
+      return Object.entries(found.members).map(([name, e]) => item(name, e.kind === 'method' ? K.Method : K.Property, range, {
+        detail: e.detail, documentation: docMd(e.doc, e.anchor),
+        insertText: e.snippet ? new vscode.SnippetString(e.snippet) : name
+      }));
+    }
+  }
+  return undefined;
+}
+
 const completionProvider = {
   provideCompletionItems(doc, pos) {
     const before = doc.lineAt(pos.line).text.slice(0, pos.character);
     const files = fileCompletions(doc, pos, before);
     if (files) return files;
-    if (!/\{\{[^}]*$/.test(before)) return undefined;
+    if (!/\{\{[^}]*$/.test(before)) return contextCompletions(doc, pos);
     const { envs, state } = variableState(doc);
     const items = [];
-    const add = (name, detail, kind) => {
+    const add = (name, detail, kind, documentation) => {
       const it = new vscode.CompletionItem(name, kind);
       it.detail = detail;
+      it.documentation = documentation;
       items.push(it);
     };
-    const envKeys = new Set();
-    envs.names.forEach(n => Object.keys(envs.get(n)).forEach(k => envKeys.add(k)));
-    Object.keys(envs.get(null)).forEach(k => envKeys.add(k));
-    envKeys.forEach(k => add(k, 'environment variable', vscode.CompletionItemKind.Variable));
-    Object.keys(state.fileVars).forEach(k => add(k, 'file variable', vscode.CompletionItemKind.Variable));
-    Object.keys(globals).forEach(k => add(k, 'global variable (client.global)', vscode.CompletionItemKind.Variable));
-    DYNAMIC_VARIABLES.forEach(([n, d]) => add(n, d, vscode.CompletionItemKind.Function));
+    // The current value, as it would be sent
+    const valueDoc = name => {
+      const info = describeVariable(state, name);
+      const value = info ? String(info.value) : '';
+      return docMd(`Current value (${info ? info.source : 'unresolved'}):\n\n\`\`\`text\n${value}\n\`\`\``, 'kinds-of-variables');
+    };
+    const V = vscode.CompletionItemKind.Variable;
+    environmentKeys(envs).forEach(k => add(k, 'environment variable', V, valueDoc(k)));
+    Object.keys(state.fileVars).forEach(k => add(k, 'file variable', V, valueDoc(k)));
+    Object.keys(globals).forEach(k => add(k, 'global variable (client.global)', V, valueDoc(k)));
+    DYNAMIC_VARIABLES.forEach(([n, d]) => add(n, d, vscode.CompletionItemKind.Function, docMd(d, 'dynamic-variables')));
     return items;
   }
 };
@@ -600,20 +689,49 @@ function checkFiles(doc, diagnostics) {
   else diagnostics.delete(doc.uri);
 }
 
+// Hovers for the script API, header names and tags.
+function contextHover(doc, pos) {
+  const lines = doc.getText().split(/\r?\n/);
+  const text = lines[pos.line];
+  const ctx = intellisense.contextAt(lines, pos.line, pos.character);
+  const hover = (md, anchor, start, end) => new vscode.Hover(docMd(md, anchor), new vscode.Range(pos.line, start, pos.line, end));
+  if (ctx.kind === 'script') {
+    const found = intellisense.scriptEntryAt(text, pos.character, ctx.scriptKind);
+    if (found) return hover(`\`${found.entry.detail}\`\n\n${found.entry.doc}`, found.entry.anchor, found.start, found.end);
+    return undefined;
+  }
+  const help = intellisense.helpAt(lines, pos.line, pos.character);
+  return help && hover(`**${help.title}**\n\n${help.doc}`, help.anchor, help.start, help.end);
+}
+
 const hoverProvider = {
   provideHover(doc, pos) {
     const range = doc.getWordRangeAtPosition(pos, /\{\{\s*[^{}]+?\s*\}\}/);
-    if (!range) return undefined;
+    if (!range) return contextHover(doc, pos);
     const name = doc.getText(range).slice(2, -2).trim();
     const { state } = variableState(doc);
     const info = describeVariable(state, name);
     const md = new vscode.MarkdownString();
+    const dynamic = DYNAMIC_VARIABLES.find(([n]) => n === name || n.split('(')[0] === name.split('(')[0]);
     if (!info) md.appendMarkdown(`**${name}** — _unresolved_ (environment: ${selectedEnv() || 'none'})`);
-    else if (info.source === 'dynamic') md.appendMarkdown(`**${name}** — dynamic variable`);
+    else if (info.source === 'dynamic') md.appendMarkdown(`**${name}** — dynamic variable${dynamic ? `: ${dynamic[1]}` : ''}`);
     else md.appendMarkdown(`**${name}** (${info.source})\n\n`).appendCodeblock(String(info.value), 'text');
+    const anchor = info && info.source === 'dynamic' ? 'dynamic-variables' : 'kinds-of-variables';
+    md.appendMarkdown(`\n\n[📖 Documentation](${intellisense.docsUrl(anchor)})`);
     return new vscode.Hover(md, range);
   }
 };
+
+// The documentation is part of the package; without the Markdown preview it opens on GitHub.
+async function openDocumentation() {
+  const local = vscode.Uri.joinPath(ctxGlobal.extensionUri, 'docs', 'documentation.md');
+  try {
+    await vscode.workspace.fs.stat(local);
+    await vscode.commands.executeCommand('markdown.showPreview', local);
+  } catch (e) {
+    await vscode.env.openExternal(vscode.Uri.parse(intellisense.docsUrl('')));
+  }
+}
 
 // ------------------------------------------------------------------ activation
 
@@ -653,8 +771,9 @@ function activate(context) {
     vscode.languages.registerCodeLensProvider(selector, codeLensProvider),
     vscode.languages.registerCodeLensProvider({ language: 'http-client-response' }, responseLensProvider),
     vscode.commands.registerCommand('httpClient.openBody', openBody),
+    vscode.commands.registerCommand('httpClient.openDocumentation', openDocumentation),
     vscode.commands.registerCommand('httpClient.saveBody', saveBody),
-    vscode.languages.registerCompletionItemProvider(selector, completionProvider, '{', '/', ' '),
+    vscode.languages.registerCompletionItemProvider(selector, completionProvider, '{', '/', ' ', '.', '@', ':', '"', "'"),
     vscode.languages.registerHoverProvider(selector, hoverProvider),
     vscode.window.onDidChangeActiveTextEditor(updateStatusBar),
     vscode.commands.registerCommand('httpClient.sendRequest', sendRequest),
@@ -667,10 +786,15 @@ function activate(context) {
     vscode.commands.registerCommand('httpClient.showGlobals', () => {
       output.appendLine('Global variables (client.global):');
       output.appendLine(JSON.stringify(globals, null, 2));
+      if (Object.keys(globalHeaders).length) {
+        output.appendLine('Global headers (client.global.headers):');
+        output.appendLine(JSON.stringify(globalHeaders, null, 2));
+      }
       output.show(true);
     }),
     vscode.commands.registerCommand('httpClient.clearGlobals', () => {
       Object.keys(globals).forEach(k => delete globals[k]);
+      Object.keys(globalHeaders).forEach(k => delete globalHeaders[k]);
       persistState();
       vscode.window.setStatusBarMessage('$(check) Global variables cleared', 3000);
     }),

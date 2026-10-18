@@ -5,7 +5,8 @@
  *
  * Supported syntax:
  *   ### Request title                 – request separator (title optional)
- *   # @name login                     – request name; other @tags like @no-redirect, @no-cookie-jar, @timeout 30
+ *   # @name login  /  # @name = login – request name; other @tags: @no-redirect, @no-log, @no-cookie-jar,
+ *                                       @no-auto-encoding, @timeout 30, @connection-timeout 2 m
  *   @host = example.com               – in-place (file) variables
  *   < {% ... %}  /  < ./script.js     – pre-request script
  *   GET https://{{host}}/path HTTP/1.1
@@ -111,7 +112,7 @@ function parseBlock(block, fileVariables) {
     let m;
     if ((m = t.match(TAG_RE))) {
       const value = m[2].trim();
-      if (m[1] === 'name') req.name = value;
+      if (m[1] === 'name') req.name = value.replace(/^=\s*/, ''); // "# @name login" or "# @name = login"
       else req.tags[m[1]] = value === '' ? true : value;
       continue;
     }

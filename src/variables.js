@@ -37,7 +37,8 @@ const DYNAMIC_VARIABLES = [
   ['$random.alphanumeric(10)', 'Random letters and digits'],
   ['$random.hexadecimal(10)', 'Random hex string'],
   ['$random.email', 'Random e-mail address'],
-  ['$env.NAME', 'OS environment variable']
+  ['$env.NAME', 'OS environment variable'],
+  ['$projectRoot', 'Workspace folder of the .http file']
 ];
 
 function parseArgs(s) {
@@ -80,13 +81,14 @@ function stringify(v) {
 }
 
 /**
- * Builds a resolver over the variable sources in priority order:
- * request variables (pre-request script) > in-place file variables > client.global > environment.
+ * Builds a resolver over the variable sources in priority order, as documented for the
+ * IntelliJ HTTP Client: environment > client.global > in-place file variables > request variables.
  */
 function makeResolver(state) {
-  const sources = () => [state.requestVars, state.fileVars, state.globals, state.envVars];
+  const sources = () => [state.envVars, state.globals, state.fileVars, state.requestVars];
   const resolve = (name, depth) => {
     if (depth > 20) return undefined;
+    if (name === '$projectRoot') return state.projectRoot;
     if (name.startsWith('$')) return resolveDynamic(name);
     for (const src of sources()) {
       if (src && Object.prototype.hasOwnProperty.call(src, name)) {
@@ -102,10 +104,10 @@ function makeResolver(state) {
 
 /** Like makeResolver, but also reports which source a name came from (for hovers). */
 function describeVariable(state, name) {
-  if (name.startsWith('$')) return { source: 'dynamic', value: resolveDynamic(name) };
+  if (name.startsWith('$')) return { source: 'dynamic', value: makeResolver(state)(name) };
   const named = [
-    ['request', state.requestVars], ['file', state.fileVars],
-    ['global', state.globals], ['environment', state.envVars]
+    ['environment', state.envVars], ['global', state.globals],
+    ['file', state.fileVars], ['request', state.requestVars]
   ];
   for (const [source, src] of named) {
     if (src && Object.prototype.hasOwnProperty.call(src, name)) {

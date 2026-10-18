@@ -6,11 +6,14 @@ request files from IntelliJ/WebStorm/PhpStorm work unchanged in VS Code: environ
 cookies and GraphQL.
 
 > **Author's note:** I mainly built this extension to keep using the environment and `.http`
-> files I already had for the IntelliJ HTTP Client, so there is little support for writing
-> these files from scratch. I also use it in a fire-and-forget way, just to send requests
-> quickly, and that is what it is designed for.
+> files I already had for the IntelliJ HTTP Client. I mostly use it in a fire-and-forget way,
+> just to send requests quickly, and that is what it is designed for.
 
 ![Selecting an environment and sending requests](images/demo.gif)
+
+📖 **[Full documentation](docs/documentation.md)** – request syntax, variables, environments,
+scripts and the complete script API, tags, cookies, the response tab and the differences from
+the IntelliJ HTTP Client.
 
 ## Quick start
 
@@ -77,6 +80,33 @@ GET https://{{host}}/me
 Authorization: Bearer {{token}}
 ```
 
+## IntelliSense
+
+Completion (`Ctrl+Space`) and hovers depend on where the cursor is:
+
+* **Request line:** HTTP methods (`GET`, `POST`, …, `GRAPHQL`), and after the URL the HTTP
+  version (`HTTP/1.1`, `HTTP/2`).
+* **`# @`:** the supported tags `name`, `no-redirect`, `no-log`, `no-cookie-jar`,
+  `no-auto-encoding`, `timeout` and `connection-timeout`, with a description on hover.
+* **Headers:** common header names. After choosing one, its typical values are suggested right away:
+  media types for `Content-Type` and `Accept`, `Bearer` / `Basic` for `Authorization`,
+  `gzip, deflate, br` for `Accept-Encoding`, … Hovering a header name explains it.
+* **Scripts `< {% %}` and `> {% %}`:** the script API with signatures and descriptions:
+  `client.`, `client.global.`, `client.global.headers.`, `client.variables.`, `request.`,
+  `request.headers.findByName(…).`, `response.` (only in response handlers), `response.headers.`,
+  `$random.`, `jwt.`, `crypto.` including chains like
+  `crypto.hmac.sha256().withTextSecret(key).digest().toHex()`, and `btoa`, `atob`,
+  `URLSearchParams`, `$uuid`, `$timestamp`, `$env` … Methods are inserted with their
+  arguments as a snippet. In `client.global.get("…")` the names of the global variables are
+  suggested, in `request.environment.get("…")` those of the environment variables. Hover shows
+  the documentation.
+* **`{{`:** variables with their current value (see [Variable precedence](#variable-precedence));
+  **`<`, `<@`, `>`, `>>`:** file paths (see [File references](#file-references)).
+
+Suggestions and hovers explain what an element does – also for methods, `###`, `@name =`, header
+values and the markers `<`, `>`, `>>` – and link to the matching section of the
+[documentation](docs/documentation.md). **HTTP-Client: Open Documentation** opens it in VS Code.
+
 ## Keyboard shortcuts
 
 | Shortcut (macOS: `Cmd` instead of `Ctrl`) | Command | Where |
@@ -101,7 +131,7 @@ the request. All shortcuts can be changed in *Preferences: Open Keyboard Shortcu
 All commands are in the Command Palette under **HTTP-Client**:
 *Send Request*, *Run All Requests in File*, *Resend Last Request*, *Pick and Send Request…*,
 *Select Environment*, *Copy Request as cURL*, *Create Environment File*,
-*Show Global Variables*, *Clear Global Variables*, *Clear Cookies*.
+*Show Global Variables*, *Clear Global Variables*, *Clear Cookies*, *Open Documentation*.
 
 ## Environments
 
@@ -138,33 +168,50 @@ all environments; the private file overrides the public one.
 
 | IntelliJ feature | Supported |
 | --- | --- |
-| `###` separators, `# @name`, comments (`#`, `//`) | ✓ |
+| `###` separators, `# @name` / `# @name = …`, comments (`#`, `//`) | ✓ |
+| Short form without method (`https://example.com` = `GET`), `HTTP/1.1` / `HTTP/2` after the URL | ✓ (the version is not enforced; Node's `fetch` uses HTTP/1.1) |
 | `▶ Send Request` per request, *Run all requests* | ✓ CodeLens, context menu, shortcuts |
 | `http-client.env.json` + `http-client.private.env.json` (incl. `$shared`) | ✓ |
 | `{{variables}}`, in-place variables `@name = value` | ✓ incl. completion and hover |
-| Dynamic variables `{{$uuid}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, `{{$randomInt}}`, `{{$random.integer(a,b)}}`, `{{$random.alphabetic(n)}}`, `{{$random.email}}` … | ✓ |
+| Completion of methods, headers, header values, tags and the script API | ✓ incl. hover |
+| Dynamic variables `{{$uuid}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`, `{{$randomInt}}`, `{{$random.integer(a,b)}}`, `{{$random.alphabetic(n)}}`, `{{$random.email}}` …, `{{$env.NAME}}`, `{{$projectRoot}}` | ✓ (in scripts without braces: `$uuid`, `$env.USER` …) |
 | Pre-request scripts `< {% … %}` / `< script.js` with `request.variables.set()` | ✓ |
 | Response handlers `> {% … %}` / `> handler.js` | ✓ |
 | `client.global.set/get/clear/clearAll/isEmpty`, `client.test`, `client.assert`, `client.log`, `client.exit` | ✓ globals persist per workspace |
-| `response.status/body/headers.valueOf()/valuesOf()/contentType` | ✓ |
-| `jsonPath()`, `$random`, `crypto.sha256()…` / `crypto.hmac.sha256()…` | ✓ |
+| `client.global.headers.set/clear` | ✓ for the session |
+| `client.variables.global/file/request/environment` | ✓ |
+| `request.url` / `request.body` (`getRaw()`, `tryGetSubstituted()`, or called: `request.url()`), `request.headers.all()/findByName()` | ✓ |
+| `response.status/body/headers.valueOf()/valuesOf()/contentType`, `response.cookies()/cookiesByName()` | ✓ |
+| `jsonPath()`, `$random`, `crypto.sha256()…` / `crypto.hmac.sha256()…` / `crypto.hmac.sha3('512')…` | ✓ |
+| `jwt.sign/verify/decode` (HS*, RS*, PS*, ES* with PEM keys) | ✓ |
+| `btoa`/`atob` (also `Window.btoa`), `URLSearchParams`, `console.log` | ✓ |
+| `Authorization: Basic user password` (encoded automatically) | ✓ |
 | Multi-line query (indented `?a=1` / `&b=2` lines) | ✓ |
 | Body from file `< ./file`, with variables `<@ ./file` | ✓ |
 | Save response `>> file` (adds `-1`, `-2` …) / `>>! file` (overwrite) | ✓ |
 | Multipart (`multipart/form-data`) incl. file parts | ✓ |
-| `# @no-redirect`, `# @no-cookie-jar`, `# @timeout 30` | ✓ |
+| `# @no-redirect`, `# @no-cookie-jar`, `# @timeout 30` (`ms`, `s`, `m`) | ✓ |
+| `# @no-log` | ✓ the request is not written to the log |
+| `# @no-auto-encoding` (query is percent-encoded by default) | ✓ |
+| `# @connection-timeout 2 m` | ✓ limits the time until the response headers arrive |
 | Cookie jar | ✓ in memory + per workspace |
 | `GRAPHQL` requests (+ JSON variables block) | ✓ |
 | Live templates `gtr`, `gtrp`, `ptr`, `ptrp`, `mptr`, `fptr` | ✓ (+ `rh`, `prs`, `gqlr`) |
 | Copy as cURL | ✓ |
-| WebSocket / gRPC requests, `run #name`, response history in `.idea` | – |
+| WebSocket / gRPC requests, `import` / `run #name`, shared scripts `={% %}`, response history in `.idea` | – |
+| Collections in variables (`{{users[*].name}}`, `request.iteration()`, `request.templateValue()`) | – |
+| `Authorization: Digest user password`, OAuth 2.0 (`{{$auth.token(…)}}`) | – |
+| `crypto.subtle`, DOM / XML response bodies (`DOMParser`), streams (`onEachLine`), `exec`/`execSync`, `sleep`/`setTimeout`, faker variables (`$random.address` …) | – |
 
 ### Variable precedence
 
-`request.variables` (pre-request script) → in-place file variables → `client.global` → environment.
+If a name is defined more than once, the first of these wins, as in the IntelliJ HTTP Client:
+environment → `client.global` → in-place file variables `@name = value` → `request.variables`
+(pre-request script).
 
 ## Notes
 
+* The [full documentation](docs/documentation.md) describes every feature in detail.
 * Uses the language id `http-client`. If *REST Client* (humao) or *httpYac* are installed too,
   they also claim `.http`; disable them or pick **HTTP-Client Request** as language mode.
 * Not affiliated with JetBrains. IntelliJ is a trademark of JetBrains s.r.o.
