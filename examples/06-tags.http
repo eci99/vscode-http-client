@@ -1,0 +1,67 @@
+# Tags are comment lines before the request line. Hover over a tag for its description.
+
+### Named request – the name is shown in the response tab and in "Pick and Send Request…"
+# @name = getUuid
+GET {{baseUrl}}/uuid
+
+### Redirects are followed by default …
+GET {{baseUrl}}/redirect/2
+
+### … unless the request has @no-redirect
+# @no-redirect
+GET {{baseUrl}}/redirect/2
+
+### Cookies: the server sets a cookie, the jar stores it
+# The cookie comes with a redirect; @no-redirect keeps that response, so its Set-Cookie is seen.
+# @no-redirect
+GET {{baseUrl}}/cookies/set?session=abc123
+
+> {%
+  client.log("cookies:", response.cookies());
+%}
+
+### The stored cookie is sent automatically
+GET {{baseUrl}}/cookies
+
+> {%
+  client.test("Cookie sent", () => client.assert(response.body.cookies.session === "abc123"));
+%}
+
+### @no-cookie-jar – no cookies are sent or stored
+# @no-cookie-jar
+GET {{baseUrl}}/cookies
+
+> {%
+  client.test("No cookie sent", () => client.assert(!response.body.cookies.session));
+%}
+
+### Set-Cookie headers in a response handler
+# @no-redirect
+GET {{baseUrl}}/cookies/set?theme=dark
+
+> {%
+  const [theme] = response.cookiesByName("theme");
+  client.log("theme cookie:", theme);
+%}
+
+### @timeout – this request takes 3 s and fails after 1 s
+# @timeout 1 s
+GET {{baseUrl}}/delay/3
+
+### @connection-timeout – maximum time until the response headers arrive
+# @connection-timeout 10 s
+GET {{baseUrl}}/delay/1
+
+### @no-log – not written to the "HTTP-Client" output channel
+# @no-log
+GET {{baseUrl}}/get?secret={{apiKey}}
+
+### The query is percent-encoded automatically: space, @ and # arrive as data
+GET {{baseUrl}}/get?q=john doe@example.com&tag=#1
+
+### @no-auto-encoding – the query is sent exactly as written
+# @no-auto-encoding
+GET {{baseUrl}}/get?q=already%20encoded
+
+### HTTP version after the URL (accepted, sent as HTTP/1.1)
+GET {{baseUrl}}/get HTTP/1.1

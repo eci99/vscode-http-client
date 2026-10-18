@@ -1,0 +1,31 @@
+# GraphQL against the public Countries API (https://countries.trevorblades.com).
+# GRAPHQL sends a POST with {"query": …, "variables": …}.
+
+### Query
+GRAPHQL https://countries.trevorblades.com/
+
+query {
+  continents {
+    code
+    name
+  }
+}
+
+### Query with variables – the JSON block after an empty line
+GRAPHQL https://countries.trevorblades.com/
+
+query Country($code: ID!) {
+  country(code: $code) {
+    name
+    capital
+    currency
+    languages { name }
+  }
+}
+
+{"code": "AT"}
+
+> {%
+  client.test("Austria", () => client.assert(response.body.data.country.name === "Austria"));
+  client.log("Capital:", response.body.data.country.capital);
+%}

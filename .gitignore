@@ -1,3 +1,5 @@
 node_modules/
 *.vsix
 http-client.private.env.json
+!examples/http-client.private.env.json
+examples/out/

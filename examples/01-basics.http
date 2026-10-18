@@ -1,0 +1,58 @@
+# Basic requests. Select the environment "httpbin" (status bar or Ctrl+Alt+Shift+E)
+# and click "▶ Send Request" above a request.
+
+### Simple GET
+GET {{baseUrl}}/get
+Accept: application/json
+
+### Short form – without a method, a request is a GET
+{{baseUrl}}/uuid
+
+### Query parameters on several lines
+GET {{baseUrl}}/get
+    ?page=1
+    &size={{pageSize}}
+    &sort=name
+
+### POST with a JSON body
+POST {{baseUrl}}/post
+Content-Type: application/json
+
+{
+  "title": "Hello",
+  "body": "Sent from VS Code",
+  "userId": 1
+}
+
+### POST a form
+POST {{baseUrl}}/post
+Content-Type: application/x-www-form-urlencoded
+
+name=Janos&city=Vienna&note=a%26b
+
+### PUT
+PUT {{baseUrl}}/put
+Content-Type: application/json
+
+{"id": 1, "title": "Replaced"}
+
+### PATCH
+PATCH {{baseUrl}}/patch
+Content-Type: application/json
+
+{"title": "Changed"}
+
+### DELETE
+DELETE {{baseUrl}}/delete
+
+### HEAD – only the headers come back
+HEAD {{baseUrl}}/get
+
+### Error status – the response tab comes to the front
+GET {{baseUrl}}/status/404
+
+### HTML response – try "Open in browser" above the response
+GET {{baseUrl}}/html
+
+### Image response – try "Open in viewer" above the response
+GET {{baseUrl}}/image/png

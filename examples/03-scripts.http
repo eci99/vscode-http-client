@@ -1,0 +1,119 @@
+# Pre-request scripts (< {% %}) and response handlers (> {% %}).
+# Script output and test results appear in the response tab and the "HTTP-Client" output.
+
+@clientName = vscode-http-client
+
+### Tests and assertions
+GET {{baseUrl}}/json
+
+> {%
+  client.test("Status 200", () => {
+    client.assert(response.status === 200, "status " + response.status);
+  });
+  client.test("Body is JSON", () => {
+    client.assert(response.contentType.mimeType === "application/json");
+  });
+  client.test("Has a slideshow", () => {
+    client.assert(jsonPath(response.body, "$.slideshow.title"), "no title");
+  });
+  client.log("Title:", jsonPath(response.body, "$.slideshow.title"));
+  client.log("Slides:", response.body.slideshow.slides.length);
+%}
+
+### A failing test
+GET {{baseUrl}}/status/201
+
+> {%
+  client.test("Expect 200", () => client.assert(response.status === 200, `got ${response.status}`));
+%}
+
+### Response headers
+GET {{baseUrl}}/response-headers?X-Rate-Limit=100
+
+> {%
+  client.log("X-Rate-Limit:", response.headers.valueOf("X-Rate-Limit"));
+  client.log("Content-Type:", response.headers.valuesOf("Content-Type"));
+  client.log("missing:", response.headers.valueOf("X-Missing"));
+%}
+
+### Request information in scripts
+POST {{baseUrl}}/anything?user={{user}}
+Content-Type: application/json
+X-Trace: {{$uuid}}
+
+{"user": "{{user}}"}
+
+> {%
+  client.log("method:", request.method);
+  client.log("raw URL:", request.url.getRaw());
+  client.log("URL:", request.url());
+  client.log("raw body:", request.body.getRaw());
+  client.log("Content-Type:", request.headers.findByName("Content-Type").value());
+  client.log("headers:", request.headers.all().map(h => h.name).join(", "));
+  client.log("environment:", request.environmentName);
+%}
+
+### Pre-request script: HMAC signature
+< {%
+  const timestamp = String($timestamp);
+  const signature = crypto.hmac.sha256()
+    .withTextSecret(request.environment.get("hmacSecret"))
+    .updateWithText(`${request.method}\n${timestamp}`)
+    .digest().toHex();
+  request.variables.set("timestamp", timestamp);
+  request.variables.set("signature", signature);
+%}
+GET {{baseUrl}}/headers
+X-Timestamp: {{timestamp}}
+X-Signature: {{signature}}
+
+### The same with scripts from files
+< ./scripts/sign.js
+GET {{baseUrl}}/headers
+X-Timestamp: {{timestamp}}
+X-Signature: {{signature}}
+
+> ./scripts/check-status.js
+
+### Hashes, Base64 and query strings
+< {%
+  const text = "Hello";
+  client.log("sha256:", crypto.sha256().updateWithText(text).digest().toHex());
+  client.log("sha3-512 (Base64):", crypto.sha3("512").updateWithText(text).digest().toBase64());
+  client.log("md5:", crypto.md5().updateWithText(text).digest().toHex());
+  client.log("btoa:", btoa(text), "atob:", atob(btoa(text)));
+  const params = new URLSearchParams({ q: "http client", page: 2 });
+  request.variables.set("query", params.toString());
+%}
+GET {{baseUrl}}/get?{{query}}
+
+### Global headers – added to all following requests
+< {%
+  client.global.headers.set("X-Api-Key", request.environment.get("apiKey"));
+%}
+GET {{baseUrl}}/headers
+
+### This request gets X-Api-Key from the request above
+GET {{baseUrl}}/headers
+
+> {%
+  client.test("Global header sent", () => client.assert(response.body.headers["X-Api-Key"]));
+  client.global.headers.clear("X-Api-Key");
+%}
+
+### client.variables – one access point for all scopes
+< {%
+  client.log("file:", client.variables.file.get("clientName"));
+  client.log("environment:", client.variables.environment.get("baseUrl"));
+  client.variables.request.set("tag", "via-client-variables");
+  client.variables.global.set("lastTag", "via-client-variables");
+%}
+GET {{baseUrl}}/anything?tag={{tag}}
+
+### Stop a script early with client.exit()
+GET {{baseUrl}}/get
+
+> {%
+  if (response.status !== 200) client.exit();
+  client.log("Only logged for status 200");
+%}

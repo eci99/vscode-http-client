@@ -1,0 +1,2 @@
+Hello from the HTTP-Client examples.
+This file is uploaded as a multipart file part.

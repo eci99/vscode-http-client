@@ -1,0 +1,50 @@
+# Bodies from files, multipart uploads and saving responses.
+# Paths are relative to this file; Ctrl+Click opens them.
+
+### Body from a file, sent as is
+POST {{baseUrl}}/post
+Content-Type: application/json
+
+< ./data/payload.json
+
+### Body from a file with {{variables}} replaced
+POST {{baseUrl}}/post
+Content-Type: application/json
+
+<@ ./data/template.json
+
+### Multipart form with a text field and a file
+POST {{baseUrl}}/post
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="description"
+
+Uploaded from the examples
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="upload.txt"
+Content-Type: text/plain
+
+< ./data/upload.txt
+--WebAppBoundary--
+
+> {%
+  client.test("File received", () => client.assert(response.body.files.file.startsWith("Hello")));
+  client.test("Field received", () => client.assert(response.body.form.description === "Uploaded from the examples"));
+%}
+
+### Save the response – a new file each time (result.json, result-1.json, …)
+GET {{baseUrl}}/json
+
+>> ./out/result.json
+
+### Save the response – always overwrite the same file
+GET {{baseUrl}}/image/png
+
+>>! ./out/image.png
+
+### Response handler and saving combined
+GET {{baseUrl}}/uuid
+
+> ./scripts/check-status.js
+>>! ./out/uuid.json

@@ -3,6 +3,13 @@
 All notable changes to this extension are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.5] – 2026-10-18
+
+### Added
+
+- [examples/](examples): ready-to-run `.http` files (basics, variables, scripts, authentication,
+  files, tags, GraphQL) with public and private environment files, data files and scripts.
+
 ## [0.1.4] – 2026-10-18
 
 ### Added

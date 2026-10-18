@@ -1,0 +1,5 @@
+{
+  "id": "{{$uuid}}",
+  "user": "{{user}}",
+  "createdAt": "{{$isoTimestamp}}"
+}

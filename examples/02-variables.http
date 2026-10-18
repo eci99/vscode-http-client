@@ -1,0 +1,54 @@
+# Variables: environment, in-place, dynamic, global and request variables.
+# Hover over a {{variable}} to see its value and where it comes from.
+
+# In-place variables apply to the whole file
+@resource = anything
+@url = {{baseUrl}}/{{resource}}
+
+### Environment and in-place variables
+GET {{url}}/items?user={{user}}&size={{pageSize}}
+
+### Dynamic variables – a new value for every occurrence
+POST {{baseUrl}}/anything
+Content-Type: application/json
+
+{
+  "id": "{{$uuid}}",
+  "timestamp": {{$timestamp}},
+  "iso": "{{$isoTimestamp}}",
+  "int": {{$randomInt}},
+  "range": {{$random.integer(100, 200)}},
+  "float": {{$random.float(0, 1)}},
+  "letters": "{{$random.alphabetic(8)}}",
+  "code": "{{$random.alphanumeric(12)}}",
+  "hex": "{{$random.hexadecimal(16)}}",
+  "email": "{{$random.email}}",
+  "osUser": "{{$env.USER}}",
+  "projectRoot": "{{$projectRoot}}"
+}
+
+### Global variables – set by a response handler, used by later requests
+# @name createItem
+POST {{baseUrl}}/anything
+Content-Type: application/json
+
+{"itemId": "{{$random.alphanumeric(6)}}"}
+
+> {%
+  client.global.set("itemId", response.body.json.itemId);
+  client.log("Stored itemId =", client.global.get("itemId"));
+%}
+
+### Uses the global variable from the request above
+GET {{baseUrl}}/anything/items/{{itemId}}
+
+### Request variables – set by a pre-request script, only for this request
+< {%
+  request.variables.set("requestId", $uuid);
+  request.variables.set("filter", JSON.stringify({ active: true }));
+%}
+GET {{baseUrl}}/anything?filter={{filter}}
+X-Request-Id: {{requestId}}
+
+### Unresolved variable – the response tab warns about it
+GET {{baseUrl}}/anything/{{doesNotExist}}

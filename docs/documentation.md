@@ -25,6 +25,9 @@ overview; this page describes every feature in detail.
 
 ## 1. Getting started
 
+> The [examples](../examples) folder contains ready-to-run `.http` files and environment files
+> for every feature described here.
+
 Files with the extension `.http` or `.rest` open in the language mode **HTTP-Client Request**.
 A file contains one or more requests, separated by lines that start with `###`.
 

@@ -15,6 +15,8 @@ cookies and GraphQL.
 scripts and the complete script API, tags, cookies, the response tab and the differences from
 the IntelliJ HTTP Client.
 
+🧪 **[Examples](examples)** – ready-to-run `.http` and environment files for every feature.
+
 ## Quick start
 
 1. Open or create a `.http` file.

@@ -2,7 +2,7 @@
 .gitignore
 .vscode/**
 test/**
-examples.http
+examples/**
 images/icon.svg
 **/*.vsix
 **/*.map
