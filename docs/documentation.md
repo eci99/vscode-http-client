@@ -709,6 +709,12 @@ Paths after `<`, `<@`, `>` and `>>` are links that open the file. A body file or
 not exist is marked as an error (`File not found: …`). Files written with `>>` / `>>!` do not
 have to exist. Paths that contain a variable are not checked.
 
+When a referenced file, a `.http` file or a folder containing them is moved or renamed in VS Code
+(Explorer, drag and drop), the paths are updated so that they still lead to the same files. A path
+keeps its form: absolute paths stay absolute, and a leading `./` is kept where it still fits. By
+default VS Code asks first; `httpClient.updatePathsOnFileMove` (`prompt`, `always`, `never`)
+changes that. Moves outside VS Code, for example with `git mv`, are not noticed.
+
 ### Snippets
 
 | Prefix | Inserts |
@@ -753,6 +759,7 @@ Shortcuts can be changed in *Preferences: Open Keyboard Shortcuts*.
 | `httpClient.timeoutSeconds` | `60` | Default request timeout; per request `# @timeout`. |
 | `httpClient.followRedirects` | `true` | Follow redirects; per request `# @no-redirect`. |
 | `httpClient.responseViewColumn` | `beside` | Show the response `beside` the editor or in the `active` column. |
+| `httpClient.updatePathsOnFileMove` | `prompt` | Update the paths after `<`, `<@`, `>` and `>>` when files or folders are moved or renamed: `prompt`, `always` or `never`. |
 | `httpClient.prettyPrintJson` | `true` | Pretty-print JSON responses. |
 
 ## 14. Differences from the IntelliJ HTTP Client

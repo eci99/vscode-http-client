@@ -61,7 +61,8 @@ Above every response:
 After `<`, `<@`, `>` and `>>`, file paths are completed relative to the `.http` file (for
 response handlers `>` only `.js` files are offered). Referenced files are clickable links, and a
 body file or script that does not exist is marked as an error. Paths that contain a
-`{{variable}}` are not checked.
+`{{variable}}` are not checked. When a referenced file, a `.http` file or a folder is moved or
+renamed in VS Code, the paths are updated (`httpClient.updatePathsOnFileMove`).
 
 ```http
 @user = janos
@@ -164,6 +165,7 @@ all environments; the private file overrides the public one.
 | `httpClient.timeoutSeconds` | `60` | Request timeout; per request `# @timeout 30`. |
 | `httpClient.followRedirects` | `true` | Follow redirects; per request `# @no-redirect`. |
 | `httpClient.responseViewColumn` | `beside` | Show the response `beside` the editor or in the `active` column. |
+| `httpClient.updatePathsOnFileMove` | `prompt` | Update the paths after `<`, `<@`, `>` and `>>` when files or folders are moved or renamed: `prompt`, `always` or `never`. |
 | `httpClient.prettyPrintJson` | `true` | Pretty-print JSON responses. |
 
 ## Supported IntelliJ features

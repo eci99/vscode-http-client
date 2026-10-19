@@ -12,6 +12,7 @@ const { CookieJar } = require('../src/cookies');
 const { formatResults } = require('../src/format');
 const { resolveDynamic } = require('../src/variables');
 const intellisense = require('../src/intellisense');
+const { fileReferences, movedReferenceEdits } = require('../src/file-references');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'http-client-'));
 fs.writeFileSync(path.join(tmp, 'payload.json'), '{"from":"file","user":"{{user}}"}');
@@ -345,6 +346,47 @@ test('intellisense: help and documentation links', () => {
   for (const a of ['request-line', 'headers', 'basic-authentication', '4-tags', 'kinds-of-variables', 'dynamic-variables',
     'separators-and-titles', 'in-place-variables', 'body-from-a-file', 'response-handlers', 'saving-the-response-body',
     'multipart', 'form-data', 'graphql']) assert.ok(anchors.has(a), a);
+});
+
+test('moving files updates the paths in .http files', () => {
+  const api = [
+    '< ./scripts/pre.js',
+    'POST https://example.com',
+    '',
+    '<@ ./data/payload.json',
+    '',
+    '> ../shared/check.js',
+    '>> ./out/{{name}}.json',
+    '>>! /tmp/abs/result.json'
+  ].join('\n');
+  assert.deepStrictEqual(fileReferences(api).map(r => [r.line, r.start, r.path]), [
+    [0, 2, './scripts/pre.js'], [3, 3, './data/payload.json'], [5, 2, '../shared/check.js'], [7, 4, '/tmp/abs/result.json']
+  ]);
+  const files = [
+    { fsPath: '/ws/api/api.http', text: api },
+    { fsPath: '/ws/api/other.http', text: 'POST https://example.com\n\n< data/payload.json' }
+  ];
+  const edits = renames => movedReferenceEdits(files, renames.map(([oldPath, newPath]) => ({ oldPath, newPath })))
+    .map(e => [e.fsPath, e.line, e.start, e.end, e.newText]);
+
+  // A referenced file is renamed: ./ and the form without it are kept.
+  assert.deepStrictEqual(edits([['/ws/api/data/payload.json', '/ws/api/data/body.json']]), [
+    ['/ws/api/api.http', 3, 3, 22, './data/body.json'],
+    ['/ws/api/other.http', 2, 2, 19, 'data/body.json']
+  ]);
+  // A referenced folder is moved; absolute paths stay absolute.
+  assert.deepStrictEqual(edits([['/ws/shared', '/ws/lib/shared'], ['/tmp/abs', '/tmp/new']]), [
+    ['/ws/api/api.http', 5, 2, 20, '../lib/shared/check.js'],
+    ['/ws/api/api.http', 7, 4, 24, '/tmp/new/result.json']
+  ]);
+  // The .http file itself is moved, under its new name; paths that still fit, absolute ones and those with variables stay.
+  assert.deepStrictEqual(edits([['/ws/api/api.http', '/ws/tests/api.http']]), [
+    ['/ws/tests/api.http', 0, 2, 18, '../api/scripts/pre.js'],
+    ['/ws/tests/api.http', 3, 3, 22, '../api/data/payload.json']
+  ]);
+  // A folder that is moved together with what it refers to needs no edits.
+  assert.deepStrictEqual(edits([['/ws/api', '/ws/v2/api']]).map(e => e[4]), ['../../shared/check.js']);
+  assert.deepStrictEqual(edits([['/ws/unrelated.json', '/ws/x.json']]), []);
 });
 
 server.listen(0, '127.0.0.1', async () => {

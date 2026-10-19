@@ -2,7 +2,7 @@
   "name": "http-client-ij-style",
   "displayName": "HTTP-Client (IntelliJ style)",
   "description": "Run .http files with the syntax of the IntelliJ HTTP Client: environments, {{variables}}, pre-request and response handler scripts, client.test/assert, cookies, GraphQL.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "eci99",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -222,6 +222,21 @@
           "type": "boolean",
           "default": true,
           "description": "Follow redirects by default (per request: `# @no-redirect`)."
+        },
+        "httpClient.updatePathsOnFileMove": {
+          "type": "string",
+          "enum": [
+            "prompt",
+            "always",
+            "never"
+          ],
+          "enumDescriptions": [
+            "Ask before the paths are updated.",
+            "Update the paths without asking.",
+            "Leave the paths as they are."
+          ],
+          "default": "prompt",
+          "description": "Update the file paths after `<`, `<@`, `>` and `>>` when a referenced file, a .http file, or a folder containing them is moved or renamed in VS Code."
         },
         "httpClient.responseViewColumn": {
           "type": "string",

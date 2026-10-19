@@ -3,6 +3,14 @@
 All notable changes to this extension are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.6] – 2026-10-19
+
+### Added
+
+- Moving or renaming a referenced file, a `.http` file or a folder in VS Code updates the paths
+  after `<`, `<@`, `>` and `>>`. `httpClient.updatePathsOnFileMove` (`prompt`, `always`, `never`)
+  decides whether to ask first.
+
 ## [0.1.5] – 2026-10-18
 
 ### Added

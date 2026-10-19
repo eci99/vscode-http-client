@@ -10,6 +10,7 @@ const { CookieJar } = require('./src/cookies');
 const { formatResults, STATUS_LINE, isBinaryResponse } = require('./src/format');
 const { DYNAMIC_VARIABLES, describeVariable } = require('./src/variables');
 const intellisense = require('./src/intellisense');
+const { fileReferences: fileReferencesIn, movedReferenceEdits } = require('./src/file-references');
 
 const LANG = 'http-client';
 const RESPONSE_SCHEME = 'http-client-response';
@@ -647,27 +648,74 @@ const completionProvider = {
 // The files that a document refers to with < <@ > and >>, with where the path is. A path with
 // a variable in it is not resolved.
 function fileReferences(doc) {
-  const parsed = parse(doc.getText());
-  const found = [];
-  for (const req of parsed.requests) {
-    for (const script of [...req.preScripts, ...req.handlers]) {
-      if (script.file !== undefined) found.push({ path: script.file, line: script.line });
-    }
-    for (const part of req.body) if (part.type === 'file') found.push({ path: part.path, line: part.line });
-    if (req.responseFile) found.push({ path: req.responseFile.path, line: req.responseFile.line, output: true });
-  }
   const base = baseDirFor(doc);
-  return found.sort((a, b) => a.line - b.line).flatMap(ref => {
-    if (ref.path.includes('{{')) return [];
-    const text = doc.lineAt(ref.line).text;
-    const start = text.indexOf(ref.path);
-    if (start < 0) return [];
+  return fileReferencesIn(doc.getText()).map(ref => {
     const target = path.resolve(base, ref.path);
-    return [{
+    return {
       ...ref, target, exists: fs.existsSync(target),
-      range: new vscode.Range(ref.line, start, ref.line, start + ref.path.length)
-    }];
+      range: new vscode.Range(ref.line, ref.start, ref.line, ref.end)
+    };
   });
+}
+
+// ------------------------------------------------------------------ moving files
+
+const updatePathsSetting = () => vscode.workspace.getConfiguration('httpClient').get('updatePathsOnFileMove', 'prompt');
+// The edits for a move, from the moment before it to the moment after it.
+const pendingMoveEdits = new Map();
+const renameKey = files => files.map(({ oldUri, newUri }) => `${oldUri.fsPath}\n${newUri.fsPath}`).join('\n');
+
+// The .http files with their current text: the editor's for open ones, which may not be saved.
+async function httpFiles() {
+  const uris = await vscode.workspace.findFiles('**/*.{http,rest}', '**/{node_modules,.git}/**');
+  const open = new Map(vscode.workspace.textDocuments
+    .filter(doc => doc.uri.scheme === 'file' && doc.languageId === LANG)
+    .map(doc => [path.resolve(doc.uri.fsPath), doc.getText()]));
+  for (const uri of uris) {
+    const key = path.resolve(uri.fsPath);
+    if (open.has(key)) continue;
+    try { open.set(key, fs.readFileSync(key, 'utf8')); } catch (e) { /* gone in the meantime */ }
+  }
+  return [...open].map(([fsPath, text]) => ({ fsPath, text }));
+}
+
+// The paths are worked out before the move, while the files are still at their old locations,
+// and changed after it, in the .http files at their new locations.
+function willRenameFiles(event) {
+  if (updatePathsSetting() === 'never') return;
+  const renames = event.files
+    .filter(({ oldUri, newUri }) => oldUri.scheme === 'file' && newUri.scheme === 'file')
+    .map(({ oldUri, newUri }) => ({ oldPath: oldUri.fsPath, newPath: newUri.fsPath }));
+  if (!renames.length) return;
+  event.waitUntil(httpFiles().then(files => {
+    pendingMoveEdits.set(renameKey(event.files), movedReferenceEdits(files, renames));
+  }));
+}
+
+async function didRenameFiles(event) {
+  const key = renameKey(event.files);
+  const edits = pendingMoveEdits.get(key);
+  pendingMoveEdits.delete(key);
+  if (!edits || !edits.length) return;
+
+  if (updatePathsSetting() === 'prompt') {
+    const files = new Set(edits.map(edit => edit.fsPath)).size;
+    const answer = await vscode.window.showInformationMessage(
+      `Update the file paths in ${files === 1 ? '1 .http file' : `${files} .http files`}?`,
+      'Yes', 'No', 'Always', 'Never');
+    if (answer === 'Always' || answer === 'Never') {
+      await vscode.workspace.getConfiguration('httpClient')
+        .update('updatePathsOnFileMove', answer.toLowerCase(), vscode.ConfigurationTarget.Global);
+    }
+    if (answer !== 'Yes' && answer !== 'Always') return;
+  }
+
+  const workspaceEdit = new vscode.WorkspaceEdit();
+  for (const edit of edits) {
+    workspaceEdit.replace(vscode.Uri.file(edit.fsPath),
+      new vscode.Range(edit.line, edit.start, edit.line, edit.end), edit.newText);
+  }
+  await vscode.workspace.applyEdit(workspaceEdit);
 }
 
 const documentLinkProvider = {
@@ -761,6 +809,8 @@ function activate(context) {
     vscode.workspace.onDidCreateFiles(checkAll),
     vscode.workspace.onDidDeleteFiles(checkAll),
     vscode.workspace.onDidRenameFiles(checkAll),
+    vscode.workspace.onWillRenameFiles(willRenameFiles),
+    vscode.workspace.onDidRenameFiles(didRenameFiles),
     vscode.window.onDidChangeWindowState(state => { if (state.focused) checkAll(); }),
     vscode.window.onDidChangeActiveTextEditor(checkAll),
     vscode.workspace.onDidOpenTextDocument(doc => checkFiles(doc, diagnostics)),

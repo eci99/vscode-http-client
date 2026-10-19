@@ -97,6 +97,7 @@ const vscode = {
     onDidCreateFiles: () => ({}),
     onDidDeleteFiles: () => ({}),
     onDidRenameFiles: () => ({}),
+    onWillRenameFiles: () => ({}),
     onDidChangeTextDocument: () => ({}),
     onDidCloseTextDocument: () => ({})
   }
