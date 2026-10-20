@@ -43,6 +43,8 @@ const vscode = {
   Range: class { constructor(...a) { this.a = a; } },
   Diagnostic: class { constructor(range, message, severity) { this.range = range; this.message = message; this.severity = severity; } },
   DiagnosticSeverity: { Error: 0 },
+  DocumentSymbol: class { constructor(name, detail, kind, range, selectionRange) { Object.assign(this, { name, detail, kind, range, selectionRange }); } },
+  SymbolKind: { Function: 11 },
   DocumentLink: class { constructor(range, target) { this.range = range; this.target = target; } },
   CodeLens: class { constructor(r, c) { this.range = r; this.command = c; } },
   CompletionItem: class { constructor(l, k) { this.label = l; this.kind = k; } },
@@ -65,6 +67,7 @@ const vscode = {
     registerCompletionItemProvider: (s, p) => { providers.completion = p; return {}; },
     registerHoverProvider: (s, p) => { providers.hover = p; return {}; },
     registerDocumentLinkProvider: (s, p) => { providers.links = p; return {}; },
+    registerDocumentSymbolProvider: (s, p) => { providers.symbols = p; return {}; },
     createDiagnosticCollection: () => {
       providers.diagnostics = new Map();
       return { set: (u, d) => providers.diagnostics.set(u.path, d), delete: u => providers.diagnostics.delete(u.path), dispose() {} };
@@ -129,6 +132,13 @@ server.listen(0, '127.0.0.1', async () => {
 
     // choose environment "dev" directly
     state.set('httpClient.env', 'dev');
+
+    // Outline: one symbol per request, from its ### line to its last line
+    const symbols = providers.symbols.provideDocumentSymbols(doc);
+    assert.deepStrictEqual(symbols.map(s => [s.name, s.detail, s.range.a, s.selectionRange.a]), [
+      ['A', 'GET http://{{host}}/a', [0, 0, 8, 0], [1, 0, 1, 21]],
+      ['B', 'GET http://{{host}}/{{p}}', [9, 0, 11, 0], [10, 0, 10, 25]]
+    ]);
 
     const lenses = providers.codeLens.provideCodeLenses(doc);
     assert.deepStrictEqual(lenses.map(l => l.command.title), ['▶▶ Run all requests', 'Environment: dev', '▶ Send Request', '▶ Send Request']);

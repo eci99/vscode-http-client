@@ -66,7 +66,8 @@ Content-Type: application/json         ← headers
 ### Separators and titles
 
 `###` starts a new request. Text after it is the request's title, shown in the response tab and
-in **Pick and Send Request…**. Requests before the first `###` are allowed.
+in **Pick and Send Request…**, the *Outline* view, the breadcrumbs and *Go to Symbol in Editor*
+(`Ctrl+Shift+O`). Requests before the first `###` are allowed.
 
 ### Comments
 

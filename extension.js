@@ -391,6 +391,12 @@ async function runAll(uriArg) {
   await execute(t.doc, parsed.requests);
 }
 
+/** How a request is listed: by its name, else its title, else its method and URL. */
+function requestLabel(req) {
+  const target = `${req.method} ${req.url}`;
+  return { label: req.name || req.title || target, target };
+}
+
 /** The .http file to pick a request from: the active one, else the file of the last run, else any open one. */
 async function requestFileAnchor() {
   const editor = vscode.window.activeTextEditor;
@@ -411,8 +417,7 @@ async function pickRequest() {
   const last = lastRun && !lastRun.all && lastRun.uri.toString() === doc.uri.toString()
     ? findRequestAt(parsed, lastRun.line) : null;
   const items = parsed.requests.map(req => {
-    const target = `${req.method} ${req.url}`;
-    const label = req.name || req.title || target;
+    const { label, target } = requestLabel(req);
     return {
       label: req === last ? `$(history) ${label}` : label,
       description: label === target ? '' : target,
@@ -491,6 +496,18 @@ const codeLensProvider = {
       }));
     }
     return lenses;
+  }
+};
+
+// The requests in the Outline view, the breadcrumbs and Go to Symbol in Editor.
+const documentSymbolProvider = {
+  provideDocumentSymbols(doc) {
+    return parse(doc.getText()).requests.map(req => {
+      const { label, target } = requestLabel(req);
+      const range = new vscode.Range(req.startLine, 0, req.endLine, doc.lineAt(req.endLine).text.length);
+      const selection = new vscode.Range(req.line, 0, req.line, doc.lineAt(req.line).text.length);
+      return new vscode.DocumentSymbol(label, label === target ? '' : target, vscode.SymbolKind.Function, range, selection);
+    });
   }
 };
 
@@ -819,6 +836,7 @@ function activate(context) {
     vscode.languages.registerDocumentLinkProvider(selector, documentLinkProvider),
     vscode.workspace.registerTextDocumentContentProvider(RESPONSE_SCHEME, responseProvider),
     vscode.languages.registerCodeLensProvider(selector, codeLensProvider),
+    vscode.languages.registerDocumentSymbolProvider(selector, documentSymbolProvider),
     vscode.languages.registerCodeLensProvider({ language: 'http-client-response' }, responseLensProvider),
     vscode.commands.registerCommand('httpClient.openBody', openBody),
     vscode.commands.registerCommand('httpClient.openDocumentation', openDocumentation),

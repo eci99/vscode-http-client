@@ -128,6 +128,9 @@ the request. All shortcuts can be changed in *Preferences: Open Keyboard Shortcu
 * **Pick and send** lists all requests of the active `.http` file – or, if none is active, of
   the file of the last request. The last sent request is marked; the picked one becomes the
   new “last request”.
+* **Outline:** the requests of a `.http` file are shown in the *Outline* view, in the
+  breadcrumbs and in *Go to Symbol in Editor* (`Ctrl+Shift+O`) – by name, title or
+  method and URL.
 
 ## Commands
 

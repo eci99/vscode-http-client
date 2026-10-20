@@ -3,6 +3,14 @@
 All notable changes to this extension are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.7] – 2026-10-21
+
+### Added
+
+- Outline: the requests of a `.http` file appear in the *Outline* view, in the breadcrumbs and in
+  *Go to Symbol in Editor* (`Ctrl+Shift+O`), named like in *Pick and Send Request…* (`@name`,
+  else the `###` title, else method and URL).
+
 ## [0.1.6] – 2026-10-19
 
 ### Added
