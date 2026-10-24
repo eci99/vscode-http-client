@@ -22,6 +22,7 @@ class Uri {
   constructor(o) { Object.assign(this, o); this.fsPath = o.path; }
   static file(p) { return new Uri({ scheme: 'file', path: p }); }
   static from(o) { return new Uri(o); }
+  static joinPath(u, ...p) { return Uri.file(path.join(u.path, ...p)); }
   toString() { return `${this.scheme}:${this.path}${this.query ? '?' + this.query : ''}`; }
 }
 const makeDoc = (file, text) => ({
@@ -38,7 +39,7 @@ const makeDoc = (file, text) => ({
 });
 
 const vscode = {
-  Uri, EventEmitter, TabInputText: class {},
+  Uri, EventEmitter, TabInputText: class {}, TabInputCustom: class {},
   SnippetString: class { constructor(v) { this.value = v; } },
   Range: class { constructor(...a) { this.a = a; } },
   Diagnostic: class { constructor(range, message, severity) { this.range = range; this.message = message; this.severity = severity; } },
@@ -51,11 +52,18 @@ const vscode = {
   CompletionItemKind: { Variable: 1, Function: 2 },
   MarkdownString: class { constructor() { this.value = ''; } appendMarkdown(s) { this.value += s; return this; } appendCodeblock(s) { this.value += s; return this; } },
   Hover: class { constructor(c) { this.contents = c; } },
+  EndOfLine: { LF: 1, CRLF: 2 },
+  Position: class { constructor(line, character) { this.line = line; this.character = character; } },
+  RelativePattern: class { constructor(base, pattern) { this.base = base; this.pattern = pattern; } },
+  QuickPickItemKind: { Separator: -1 },
+  WorkspaceEdit: class { constructor() { this.edits = []; } replace(uri, range, text) { this.edits.push([uri, range, text]); } },
   StatusBarAlignment: { Right: 2 }, ViewColumn: { Beside: -2, Active: -1 }, ProgressLocation: { Window: 10 },
   env: { clipboard: { writeText: async t => { clipboard = t; } } },
   commands: {
     registerCommand: (id, f) => { commands[id] = f; return {}; },
-    executeCommand: async (id, uri) => {
+    executed: [],
+    executeCommand: async (id, uri, ...rest) => {
+      vscode.commands.executed.push([id, uri, ...rest]);
       if (id !== 'vscode.open') return;
       opened.push(uri.fsPath);
       const group = { viewColumn: 2 };
@@ -75,7 +83,7 @@ const vscode = {
     setTextDocumentLanguage: async d => d
   },
   window: {
-    activeTextEditor: null, visibleTextEditors: [], tabGroups: { all: [] },
+    activeTextEditor: null, visibleTextEditors: [], tabGroups: { all: [], onDidChangeTabs: () => ({}) },
     createOutputChannel: () => ({ lines: [], appendLine(l) { this.lines.push(l); }, show() {}, dispose() {} }),
     createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {} }),
     showTextDocument: async d => { shown.push(d); },
@@ -84,6 +92,20 @@ const vscode = {
     showErrorMessage: m => { throw new Error('error: ' + m); }, showInformationMessage: async () => undefined,
     showQuickPick: async items => items.find(i => i.label.endsWith('B')),
     onDidChangeActiveTextEditor: () => ({}),
+    registerCustomEditorProvider: (type, p) => { providers.visual = p; return {}; },
+    createWebviewPanel: () => {
+      let onMsg;
+      const panel = {
+        posted: [], send: m => onMsg(m), reveal() {}, onDidDispose() {},
+        webview: {
+          html: '', cspSource: 'csp', asWebviewUri: u => u,
+          postMessage: async m => { panel.posted.push(m); },
+          onDidReceiveMessage: f => { onMsg = f; return { dispose() {} }; }
+        }
+      };
+      providers.envPanel = panel;
+      return panel;
+    },
     onDidChangeWindowState: () => ({})
   },
   workspace: {
@@ -91,9 +113,36 @@ const vscode = {
     getWorkspaceFolder: () => ({ uri: Uri.file(dir) }),
     getConfiguration: () => ({ get: (k, d) => d }),
     textDocuments: [],
+    fs: {
+      isWritableFileSystem: scheme => scheme === 'file',
+      writeFile: async (uri, data) => fs.writeFileSync(uri.fsPath, data)
+    },
     saveAllCalls: 0,
     saveAll: async () => { vscode.workspace.saveAllCalls++; return true; },
-    openTextDocument: async uri => ({ uri, languageId: 'http-client-response', getText: () => providers.content.provideTextDocumentContent(uri) }),
+    applyEdit: async edit => {
+      for (const [uri, range, text] of edit.edits) {
+        const d = vscode.workspace.textDocuments.find(x => x.uri.toString() === uri.toString());
+        const lines = d.text.split('\n');
+        const off = (l, c) => lines.slice(0, l).reduce((n, x) => n + x.length + 1, 0) + c;
+        const [sl, sc, el, ec] = range.a.length === 2 ? [range.a[0].line, range.a[0].character, range.a[1].line, range.a[1].character] : range.a;
+        d.text = d.text.slice(0, off(sl, sc)) + text + d.text.slice(off(el, ec));
+        d.version++;
+      }
+      return true;
+    },
+    openTextDocument: async uri => {
+      if (uri.scheme !== 'file') return { uri, languageId: 'http-client-response', getText: () => providers.content.provideTextDocumentContent(uri) };
+      const open = vscode.workspace.textDocuments.find(d => d.uri.toString() === uri.toString());
+      if (open) return open;
+      const d = {
+        uri, version: 1, text: fs.readFileSync(uri.fsPath, 'utf8'), getText() { return this.text; },
+        get lineCount() { return this.text.split('\n').length; },
+        lineAt(n) { return { range: { end: new vscode.Position(n, this.text.split('\n')[n].length) } }; },
+        save: async () => { fs.writeFileSync(uri.fsPath, d.text); return true; }
+      };
+      vscode.workspace.textDocuments.push(d);
+      return d;
+    },
     registerTextDocumentContentProvider: (s, p) => { providers.content = p; return {}; },
     createFileSystemWatcher: () => ({ onDidChange() {}, onDidCreate() {}, onDidDelete() {}, dispose() {} }),
     onDidOpenTextDocument: f => { providers.onOpen = f; return {}; },
@@ -128,7 +177,7 @@ server.listen(0, '127.0.0.1', async () => {
     vscode.workspace.textDocuments.push(doc);
 
     const ext = require('../extension');
-    ext.activate({ subscriptions: [], workspaceState: { get: (k, d) => state.has(k) ? state.get(k) : d, update: async (k, v) => state.set(k, v) } });
+    ext.activate({ subscriptions: [], extensionUri: Uri.file(path.join(__dirname, '..')), workspaceState: { get: (k, d) => state.has(k) ? state.get(k) : d, update: async (k, v) => state.set(k, v) } });
 
     // choose environment "dev" directly
     state.set('httpClient.env', 'dev');
@@ -216,6 +265,91 @@ server.listen(0, '127.0.0.1', async () => {
 
     await commands['httpClient.copyAsCurl']();
     assert.ok(clipboard.includes(`http://127.0.0.1:${port}/a`) && clipboard.includes('Authorization: s3'), clipboard);
+
+    // Visual editor: the webview gets the blocks, edits change only their block
+    const vdoc = {
+      uri: Uri.file(path.join(dir, 'visual.http')), languageId: 'http-client', version: 1, eol: 1,
+      text: '@v = 1\n\n### A\n# @name a\nGET http://{{host}}/a?x=1\nAccept: */*\n\n### B\nPOST http://{{host}}/b\n\n{"a":1}\n',
+      getText() { return this.text; }
+    };
+    vscode.workspace.textDocuments.push(vdoc);
+    const posted = [];
+    let onMessage;
+    const makePanel = (sink, onMsg) => ({
+      viewColumn: 1, active: true,
+      webview: {
+        options: {}, html: '', cspSource: 'csp', asWebviewUri: u => u,
+        postMessage: async m => { sink.push(m); },
+        onDidReceiveMessage: f => { onMsg(f); return { dispose() {} }; }
+      },
+      onDidDispose() {}, onDidChangeViewState() { return { dispose() {} }; },
+      dispose() { this.disposed = true; }
+    });
+    providers.visual.resolveCustomTextEditor(vdoc, makePanel(posted, f => { onMessage = f; }));
+    const message = async m => { onMessage(m); await new Promise(r => setTimeout(r, 50)); };
+    await message({ type: 'ready' });
+    assert.ok(posted.find(m => m.type === 'init').meta.methods.includes('PATCH'));
+    const vmodel = posted.find(m => m.type === 'model');
+    assert.deepStrictEqual(vmodel.environments, ['dev']);
+    assert.strictEqual(vmodel.environment, 'dev');
+    assert.deepStrictEqual(vmodel.blocks.map(b => b.request && b.request.method), [null, 'GET', 'POST']);
+    assert.deepStrictEqual(vmodel.blocks[1].request.query, [{ name: 'x', value: '1', eq: true }]);
+    const edited = vmodel.blocks[1];
+    edited.request.method = 'PUT';
+    edited.request.query.push({ name: 'y', value: '{{v}}', eq: true });
+    edited.request.headers.push({ name: 'X-Test', value: 'yes' });
+    await message({ type: 'edit', version: 1, changes: [{ index: 1, block: edited }] });
+    assert.strictEqual(vdoc.text, '@v = 1\n\n### A\n# @name a\nPUT http://{{host}}/a?x=1&y={{v}}\nAccept: */*\nX-Test: yes\n\n### B\nPOST http://{{host}}/b\n\n{"a":1}\n');
+    assert.deepStrictEqual(posted[posted.length - 1], { type: 'ack', ok: true, version: 2 });
+    await message({ type: 'edit', version: 1, changes: [{ index: 1, block: vmodel.blocks[2] }] });
+    assert.strictEqual(posted.filter(m => m.type === 'ack').pop().ok, false, 'an edit of an old version is dropped');
+    await message({ type: 'op', op: 'duplicate', index: 2 });
+    assert.strictEqual(vdoc.text.split('### B').length, 3);
+    assert.deepStrictEqual(posted.filter(m => m.type === 'focus').pop(), { type: 'focus', index: 3 });
+    const hitsBefore = hits;
+    await message({ type: 'send', index: 1 });
+    assert.strictEqual(hits, hitsBefore + 1);
+    const sent = providers.content.provideTextDocumentContent(shown[0].uri);
+    assert.ok(sent.includes('/a?x=1&y=1'), sent);
+
+    // A file with merge conflicts is shown in the text editor
+    const cdoc = {
+      uri: Uri.file(path.join(dir, 'conflict.http')), languageId: 'http-client', version: 1, eol: 1,
+      text: '### A\n<<<<<<< HEAD\nGET http://a\n=======\nGET http://b\n>>>>>>> branch\n', getText() { return this.text; }
+    };
+    const cposted = [];
+    let conMessage;
+    const cpanel = makePanel(cposted, f => { conMessage = f; });
+    providers.visual.resolveCustomTextEditor(cdoc, cpanel);
+    conMessage({ type: 'ready' });
+    await new Promise(r => setTimeout(r, 50));
+    assert.strictEqual(cposted.find(m => m.type === 'model').textOnly, 'conflict');
+    assert.ok(vscode.commands.executed.some(([id, uri, type]) => id === 'vscode.openWith' && uri === cdoc.uri && type === 'default'));
+    assert.ok(cpanel.disposed);
+    // A version from git (left side of a diff) is not shown as a form either
+    const gposted = [];
+    let gitMessage;
+    const gdoc = { ...vdoc, uri: Uri.from({ scheme: 'git', path: vdoc.uri.path }) };
+    providers.visual.resolveCustomTextEditor(gdoc, makePanel(gposted, f => { gitMessage = f; }));
+    gitMessage({ type: 'ready' });
+    await new Promise(r => setTimeout(r, 50));
+    assert.strictEqual(gposted.find(m => m.type === 'model').textOnly, 'diff');
+    assert.ok(vscode.commands.executed.some(([id]) => id === 'workbench.action.reopenTextEditor'));
+
+    // Environment editor: both files as one table; changes are written to the files
+    await commands['httpClient.editEnvironments'](Uri.file(path.join(dir, 'http-client.env.json')));
+    const envPanel = providers.envPanel;
+    const envMessage = async m => { envPanel.send(m); await new Promise(r => setTimeout(r, 50)); };
+    await envMessage({ type: 'ready' });
+    const envTable = envPanel.posted.pop();
+    assert.deepStrictEqual([envTable.environments, envTable.variables, envTable.active], [['dev'], ['host', 'secret'], 'dev']);
+    assert.strictEqual(envTable.cells.secret.dev.private, true);
+    await envMessage({ type: 'op', change: { op: 'set', env: 'dev', name: 'token', value: 't1', private: true } });
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(path.join(dir, 'http-client.private.env.json'), 'utf8')), { dev: { secret: 's3', token: 't1' } });
+    await envMessage({ type: 'op', change: { op: 'renameEnvironment', from: 'dev', to: 'local' } });
+    assert.deepStrictEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(dir, 'http-client.env.json'), 'utf8'))), ['local']);
+    assert.strictEqual(state.get('httpClient.env'), 'local', 'the selected environment follows the rename');
+    assert.deepStrictEqual(envPanel.posted.pop().environments, ['local']);
 
     console.log('✓ extension smoke test passed');
     console.log(content.split('\n').slice(0, 12).join('\n'));

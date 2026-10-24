@@ -13,6 +13,8 @@ const { formatResults } = require('../src/format');
 const { resolveDynamic } = require('../src/variables');
 const intellisense = require('../src/intellisense');
 const { fileReferences, movedReferenceEdits } = require('../src/file-references');
+const visual = require('../src/visual-model');
+const envs = require('../src/env-model');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'http-client-'));
 fs.writeFileSync(path.join(tmp, 'payload.json'), '{"from":"file","user":"{{user}}"}');
@@ -387,6 +389,118 @@ test('moving files updates the paths in .http files', () => {
   // A folder that is moved together with what it refers to needs no edits.
   assert.deepStrictEqual(edits([['/ws/api', '/ws/v2/api']]).map(e => e[4]), ['../../shared/check.js']);
   assert.deepStrictEqual(edits([['/ws/unrelated.json', '/ws/x.json']]), []);
+});
+
+test('visual editor: blocks are written back unchanged', () => {
+  // Written from its fields, every block of the examples gives the same requests and almost the same text.
+  const examples = path.join(__dirname, '..', 'examples');
+  const comparable = text => {
+    const p = parse(text);
+    const noLines = o => o && Object.fromEntries(Object.entries(o).filter(([k]) => !/line$/i.test(k)));
+    return p.requests.map(r => ({
+      ...noLines(r), body: r.body.map(noLines), handlers: r.handlers.map(noLines),
+      preScripts: r.preScripts.map(noLines), responseFile: noLines(r.responseFile)
+    })).concat([p.fileVariables]);
+  };
+  for (const f of fs.readdirSync(examples).filter(f => f.endsWith('.http'))) {
+    const text = fs.readFileSync(path.join(examples, f), 'utf8');
+    const written = visual.toModel(text).flatMap(b => visual.serializeBlock(b)).join('\n');
+    assert.deepStrictEqual(comparable(written), comparable(text), f);
+    const changedLines = written.split('\n').filter((l, i) => l !== text.split('\n')[i]);
+    // "{{baseUrl}}/uuid" gets its GET, "# @name = getUuid" becomes "# @name getUuid"
+    assert.ok(changedLines.length <= 1, `${f}: ${changedLines}`);
+  }
+});
+
+test('visual editor: fields of a block', () => {
+  const text = '# file comment\n@host = localhost\n\n### Login\n# @name login\n# @no-log\n# @timeout 5 s\n< {%\n  request.variables.set("a", 1);\n%}\n' +
+    'POST https://{{host}}/login\n    ?debug\n    &lang=de HTTP/1.1\nContent-Type: application/json\n# a comment\n\n{"user": "x"}\n\n' +
+    '> {% client.global.set("token", response.body.token); %}\n>>! ./out.json\n\n### Empty\n';
+  const blocks = visual.toModel(text);
+  assert.strictEqual(blocks.length, 3);
+  assert.deepStrictEqual(blocks[0].variables, [{ name: 'host', value: 'localhost' }]);
+  assert.strictEqual(blocks[0].request, null);
+  const b = blocks[1];
+  assert.deepStrictEqual([b.title, b.name, b.tags], ['Login', 'login', [{ name: 'no-log', value: '' }, { name: 'timeout', value: '5 s' }]]);
+  assert.strictEqual(b.preScript, '< {%\n  request.variables.set("a", 1);\n%}');
+  assert.deepStrictEqual(b.request.query, [{ name: 'debug', value: '', eq: false }, { name: 'lang', value: 'de', eq: true }]);
+  assert.deepStrictEqual([b.request.method, b.request.url, b.request.httpVersion, b.request.multilineQuery],
+    ['POST', 'https://{{host}}/login', 'HTTP/1.1', true]);
+  assert.deepStrictEqual(b.request.headers, [{ name: 'Content-Type', value: 'application/json' }]);
+  assert.strictEqual(b.request.headerExtra, '# a comment');
+  assert.strictEqual(b.request.body, '{"user": "x"}');
+  assert.strictEqual(b.request.handlers, '> {% client.global.set("token", response.body.token); %}');
+  assert.deepStrictEqual(b.request.responseFile, { path: './out.json', overwrite: true });
+  assert.strictEqual(visual.serializeBlock(b).join('\n'), text.slice(text.indexOf('### Login'), text.indexOf('### Empty') - 1));
+  assert.strictEqual(blocks[2].title, 'Empty');
+
+  // Changed fields
+  b.request.method = 'PUT';
+  b.request.multilineQuery = false;
+  b.request.query[0].value = '1';
+  b.request.body = '';
+  b.request.responseFile = { path: '', overwrite: false };
+  b.tags = b.tags.filter(t => t.name !== 'no-log');
+  b.variables.push({ name: 'x', value: '2' });
+  assert.deepStrictEqual(visual.serializeBlock(b), [
+    '### Login', '# @name login', '# @timeout 5 s', '@x = 2', '< {%', '  request.variables.set("a", 1);', '%}',
+    'PUT https://{{host}}/login?debug=1&lang=de HTTP/1.1', 'Content-Type: application/json', '# a comment', '',
+    '> {% client.global.set("token", response.body.token); %}', ''
+  ]);
+});
+
+test('visual editor: add, delete, duplicate and move blocks', () => {
+  const text = '@a = 1\n\n### A\n# @name a\nGET http://a\n\n### B\nGET http://b\n';
+  const op = (o, i) => visual.applyOperation(text, o, i);
+  assert.deepStrictEqual(op('add', 0), { text: `${text}\n### New request\nGET https://\n`, index: 3 });
+  assert.deepStrictEqual(op('delete', 1), { text: '@a = 1\n\n### B\nGET http://b\n', index: -1 });
+  assert.deepStrictEqual(op('duplicate', 1), {
+    text: '@a = 1\n\n### A\n# @name a\nGET http://a\n\n### A\n# @name a-copy\nGET http://a\n\n### B\nGET http://b\n', index: 2
+  });
+  const swapped = { text: '@a = 1\n\n### B\nGET http://b\n\n### A\n# @name a\nGET http://a\n' };
+  assert.deepStrictEqual(op('up', 2), { ...swapped, index: 1 });
+  assert.deepStrictEqual(op('down', 1), { ...swapped, index: 2 });
+  assert.deepStrictEqual(op('down', 2), { text, index: 2 });
+  // The first request of a file without ### gets one when it is moved.
+  assert.strictEqual(visual.applyOperation('GET http://x\n\n### B\nGET y\n', 'down', 0).text, '### B\nGET y\n\n###\nGET http://x\n');
+  assert.deepStrictEqual(visual.applyOperation('', 'add', 0), { text: '### New request\nGET https://\n', index: 0 });
+});
+
+test('environment editor: table of the public and private file', () => {
+  const pub = { $shared: { user: 'u', size: 10 }, dev: { host: 'localhost', ssl: { verify: false } }, prod: { host: 'api' } };
+  const priv = { dev: { password: 'p', host: 'secret-host' }, prod: { password: 'q' } };
+  const m = envs.envModel(pub, priv);
+  assert.deepStrictEqual(m.environments, ['$shared', 'dev', 'prod']);
+  assert.deepStrictEqual(m.variables, ['user', 'size', 'host', 'ssl', 'password']);
+  assert.deepStrictEqual(m.cells.size.$shared, { value: '10', private: false, kind: 'number', shadowsPublic: false });
+  assert.deepStrictEqual(m.cells.host.dev, { value: 'secret-host', private: true, kind: 'string', shadowsPublic: true });
+  assert.strictEqual(m.cells.ssl.dev.kind, 'json');
+  assert.deepStrictEqual(envs.envModel(null, undefined), { environments: [], variables: [], cells: {} });
+
+  const op = change => envs.applyEnvOperation(pub, priv, change);
+  // Values keep their type where they can; the input objects are not changed.
+  assert.strictEqual(op({ op: 'set', env: '$shared', name: 'size', value: '20', private: false }).pub.$shared.size, 20);
+  assert.strictEqual(op({ op: 'set', env: '$shared', name: 'size', value: 'all', private: false }).pub.$shared.size, 'all');
+  assert.strictEqual(pub.$shared.size, 10);
+  assert.deepStrictEqual(op({ op: 'set', env: 'prod', name: 'token', value: 't', private: true }).priv.prod, { password: 'q', token: 't' });
+  const moved = op({ op: 'move', env: 'prod', name: 'host', private: true });
+  assert.deepStrictEqual([moved.pub.prod, moved.priv.prod], [{}, { password: 'q', host: 'api' }]);
+  const deleted = op({ op: 'delete', env: 'dev', name: 'host' });
+  assert.deepStrictEqual([deleted.pub.dev, deleted.priv.dev], [{ ssl: { verify: false } }, { password: 'p' }]);
+  assert.deepStrictEqual(op({ op: 'addVariable', name: 'apiKey' }).pub.prod, { host: 'api', apiKey: '' });
+  assert.ok(!('password' in op({ op: 'addVariable', name: 'password' }).pub.dev), 'already private: not added again');
+  // A renamed variable or environment keeps its position.
+  assert.deepStrictEqual(Object.keys(op({ op: 'renameVariable', from: 'host', to: 'baseUrl' }).pub.dev), ['baseUrl', 'ssl']);
+  const renamed = op({ op: 'renameEnvironment', from: 'dev', to: 'local' });
+  assert.deepStrictEqual([Object.keys(renamed.pub), Object.keys(renamed.priv)], [['$shared', 'local', 'prod'], ['local', 'prod']]);
+  assert.deepStrictEqual(Object.keys(op({ op: 'deleteEnvironment', env: 'prod' }).priv), ['dev']);
+  assert.deepStrictEqual(op({ op: 'deleteVariable', name: 'password' }).priv, { dev: { host: 'secret-host' }, prod: {} });
+  assert.deepStrictEqual(op({ op: 'addEnvironment', env: 'test' }).pub.test, {});
+  // Missing files are created only when something is written to them.
+  assert.deepStrictEqual(envs.applyEnvOperation(null, null, { op: 'addVariable', name: 'host' }), { pub: { dev: { host: '' } }, priv: null });
+  // JSON in the style of the file
+  assert.strictEqual(envs.formatJson({ a: { b: 1 } }, '{\r\n    "x": {}\r\n}\r\n'), '{\r\n    "a": {\r\n        "b": 1\r\n    }\r\n}\r\n');
+  assert.strictEqual(envs.formatJson({}, null), '{}\n');
 });
 
 server.listen(0, '127.0.0.1', async () => {

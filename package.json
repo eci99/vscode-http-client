@@ -2,7 +2,7 @@
   "name": "http-client-ij-style",
   "displayName": "HTTP-Client (IntelliJ style)",
   "description": "Run .http files with the syntax of the IntelliJ HTTP Client: environments, {{variables}}, pre-request and response handler scripts, client.test/assert, cookies, GraphQL.",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "publisher": "eci99",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -87,6 +87,21 @@
         }
       }
     ],
+    "customEditors": [
+      {
+        "viewType": "httpClient.visualEditor",
+        "displayName": "HTTP-Client Visual Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.http"
+          },
+          {
+            "filenamePattern": "*.rest"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
     "snippets": [
       {
         "language": "http-client",
@@ -119,9 +134,27 @@
         "icon": "$(list-selection)"
       },
       {
+        "command": "httpClient.openVisualEditor",
+        "title": "Open in Visual Editor",
+        "category": "HTTP-Client",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "httpClient.openTextEditor",
+        "title": "Open in Text Editor",
+        "category": "HTTP-Client",
+        "icon": "$(go-to-file)"
+      },
+      {
         "command": "httpClient.selectEnvironment",
         "title": "Select Environment",
         "category": "HTTP-Client"
+      },
+      {
+        "command": "httpClient.editEnvironments",
+        "title": "Edit Environments",
+        "category": "HTTP-Client",
+        "icon": "$(edit)"
       },
       {
         "command": "httpClient.copyAsCurl",
@@ -187,9 +220,24 @@
     "menus": {
       "editor/title": [
         {
+          "command": "httpClient.openVisualEditor",
+          "when": "editorLangId == http-client && !activeCustomEditorId",
+          "group": "navigation@1"
+        },
+        {
           "command": "httpClient.runAll",
           "when": "editorLangId == http-client",
-          "group": "navigation"
+          "group": "navigation@2"
+        },
+        {
+          "command": "httpClient.openTextEditor",
+          "when": "activeCustomEditorId == httpClient.visualEditor",
+          "group": "navigation@1"
+        },
+        {
+          "command": "httpClient.editEnvironments",
+          "when": "resourceFilename =~ /^http-client(\\.private)?\\.env\\.json$/",
+          "group": "navigation@1"
         }
       ],
       "editor/context": [
@@ -207,6 +255,28 @@
           "command": "httpClient.openDocumentation",
           "when": "editorLangId == http-client",
           "group": "http-client@3"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "httpClient.openVisualEditor",
+          "when": "resourceExtname == .http || resourceExtname == .rest",
+          "group": "navigation@20"
+        },
+        {
+          "command": "httpClient.editEnvironments",
+          "when": "resourceFilename =~ /^http-client(\\.private)?\\.env\\.json$/",
+          "group": "navigation@20"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "httpClient.openVisualEditor",
+          "when": "editorLangId == http-client || resourceExtname == .http || resourceExtname == .rest"
+        },
+        {
+          "command": "httpClient.openTextEditor",
+          "when": "activeCustomEditorId == httpClient.visualEditor"
         }
       ]
     },

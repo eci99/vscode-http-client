@@ -8,8 +8,10 @@ cookies and GraphQL.
 > **Author's note:** I mainly built this extension to keep using the environment and `.http`
 > files I already had for the IntelliJ HTTP Client. I mostly use it in a fire-and-forget way,
 > just to send requests quickly, and that is what it is designed for.
+> In the meantime, a visual editor and more have been added, and it has become a handy REST
+> client – give it a try.
 
-![Selecting an environment and sending requests](images/demo.gif)
+![Visual editor: selecting an environment, adding a header, sending the request and editing the environments in a table](images/demo.gif)
 
 📖 **[Full documentation](docs/documentation.md)** – request syntax, variables, environments,
 scripts and the complete script API, tags, cookies, the response tab and the differences from
@@ -83,6 +85,17 @@ GET https://{{host}}/me
 Authorization: Bearer {{token}}
 ```
 
+## Visual editor
+
+Prefer forms to syntax? **Open in Visual Editor** (icon in the editor title, Explorer context
+menu or Command Palette) shows the requests of a `.http` file as cards: method, URL, query
+parameters, headers (with suggestions), body (content type buttons, *Format JSON*), scripts,
+tags and variables. Requests can be sent, added, duplicated, moved and deleted there.
+
+The visual editor edits the file itself – only the changed request is rewritten, so comments and
+formatting elsewhere stay as they are; `Ctrl+S` saves and `Ctrl+Z` undoes. **{ } Text** switches
+back to the text editor. Details: [Visual editor](docs/documentation.md#visual-editor).
+
 ## IntelliSense
 
 Completion (`Ctrl+Space`) and hovers depend on where the cursor is:
@@ -136,8 +149,9 @@ the request. All shortcuts can be changed in *Preferences: Open Keyboard Shortcu
 
 All commands are in the Command Palette under **HTTP-Client**:
 *Send Request*, *Run All Requests in File*, *Resend Last Request*, *Pick and Send Request…*,
-*Select Environment*, *Copy Request as cURL*, *Create Environment File*,
-*Show Global Variables*, *Clear Global Variables*, *Clear Cookies*, *Open Documentation*.
+*Select Environment*, *Edit Environments*, *Copy Request as cURL*, *Create Environment File*,
+*Show Global Variables*, *Clear Global Variables*, *Clear Cookies*, *Open Documentation*,
+*Open in Visual Editor*, *Open in Text Editor*.
 
 ## Environments
 
@@ -159,6 +173,9 @@ all environments; the private file overrides the public one.
   selected environment does not exist for a file, the request runs without one and the
   response says so.
 * Keep `http-client.private.env.json` out of version control.
+* **HTTP-Client: Edit Environments** (also in the environment list and the visual editor) shows
+  both files as one table – variables × environments, 🔒 for private values – and saves every
+  change right away. Details: [Editing environments in a table](docs/documentation.md#editing-environments-in-a-table).
 
 ## Settings
 

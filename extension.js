@@ -11,6 +11,8 @@ const { formatResults, STATUS_LINE, isBinaryResponse } = require('./src/format')
 const { DYNAMIC_VARIABLES, describeVariable } = require('./src/variables');
 const intellisense = require('./src/intellisense');
 const { fileReferences: fileReferencesIn, movedReferenceEdits } = require('./src/file-references');
+const { VisualEditorProvider, VIEW_TYPE: VISUAL_EDITOR, openWith } = require('./src/visual-editor');
+const { EnvironmentEditor } = require('./src/env-editor');
 
 const LANG = 'http-client';
 const RESPONSE_SCHEME = 'http-client-response';
@@ -26,6 +28,8 @@ let globals;
 // client.global.headers: kept in memory for the session only
 const globalHeaders = {};
 let lastRun; // { uri, line } for a single request, { uri, all: true } for "run all"
+let visualEditor;
+let envEditor;
 
 // ------------------------------------------------------------------ environments
 
@@ -81,9 +85,15 @@ function selectedEnv() {
   return ctxGlobal.workspaceState.get('httpClient.env', null);
 }
 
+/** Whether the active tab is the visual editor (it has no text editor). */
+function visualEditorActive() {
+  const tab = vscode.window.tabGroups.activeTabGroup && vscode.window.tabGroups.activeTabGroup.activeTab;
+  return !!(tab && tab.input instanceof vscode.TabInputCustom && tab.input.viewType === VISUAL_EDITOR);
+}
+
 function updateStatusBar() {
   const editor = vscode.window.activeTextEditor;
-  if (!editor || editor.document.languageId !== LANG) { statusBar.hide(); return; }
+  if ((!editor || editor.document.languageId !== LANG) && !visualEditorActive()) { statusBar.hide(); return; }
   const env = selectedEnv();
   statusBar.text = `$(globe) ${env || 'No Environment'}`;
   statusBar.tooltip = 'HTTP-Client: select environment';
@@ -110,18 +120,47 @@ async function selectEnvironment() {
   const envs = doc ? loadEnvironments(doc) : { names: [], files: null };
   if (!envs.names.length) {
     const choice = await vscode.window.showInformationMessage(
-      `No environments found. Create ${ENV_FILE}?`, 'Create');
-    if (choice) await createEnvFile();
+      `No environments found. Create ${ENV_FILE}?`, 'Create', 'Edit in Table');
+    if (choice === 'Create') await createEnvFile();
+    if (choice === 'Edit in Table') await editEnvironments();
     return;
   }
   const current = selectedEnv();
+  const EDIT = '$(edit) Edit Environments…';
   const picked = await vscode.window.showQuickPick(
-    [NO_ENV, ...envs.names].map(n => ({ label: n, description: n === current ? '(active)' : '' })),
+    [...[NO_ENV, ...envs.names].map(n => ({ label: n, description: n === current ? '(active)' : '' })),
+      { label: '', kind: vscode.QuickPickItemKind.Separator }, { label: EDIT }],
     { placeHolder: `Environment (${path.relative(workspaceRootFor(doc.uri) || '', envs.files.dir) || '.'})` });
   if (!picked) return;
-  await ctxGlobal.workspaceState.update('httpClient.env', picked.label === NO_ENV ? null : picked.label);
+  if (picked.label === EDIT) { await editEnvironments(); return; }
+  await setEnvironment(picked.label === NO_ENV ? null : picked.label);
+}
+
+const ENV_FILE_RE = /^http-client(\.private)?\.env\.json$/;
+
+/**
+ * Opens the environment editor for the env files that a .http file uses (or of the directory of
+ * an env file); without an argument for the active / last used .http file.
+ */
+async function editEnvironments(uriArg) {
+  let dir = null;
+  if (uriArg instanceof vscode.Uri && uriArg.scheme === 'file' && ENV_FILE_RE.test(path.basename(uriArg.fsPath))) {
+    dir = path.dirname(uriArg.fsPath);
+  } else {
+    const anchor = uriArg instanceof vscode.Uri ? { uri: uriArg } : envAnchor();
+    const files = anchor && findEnvFiles(anchor);
+    dir = files ? files.dir : anchor ? baseDirFor(anchor) : null;
+  }
+  if (!dir) { vscode.window.showErrorMessage('Open a folder first.'); return; }
+  envEditor.open(dir);
+}
+
+async function setEnvironment(name) {
+  await ctxGlobal.workspaceState.update('httpClient.env', name);
   updateStatusBar();
   codeLensEmitter.fire();
+  if (visualEditor) visualEditor.refreshAll();
+  if (envEditor) envEditor.refreshAll();
 }
 
 async function createEnvFile() {
@@ -816,9 +855,19 @@ function activate(context) {
   const diagnostics = vscode.languages.createDiagnosticCollection('http-client');
   const checkAll = () => vscode.workspace.textDocuments.forEach(doc => checkFiles(doc, diagnostics));
   checkAll();
+  visualEditor = new VisualEditorProvider(context, {
+    environments: doc => ({ names: loadEnvironments(doc).names, current: selectedEnv() }),
+    setEnvironment,
+    send: sendRequest,
+    runAll,
+    editEnvironments
+  });
+  envEditor = new EnvironmentEditor(context, { current: selectedEnv, setEnvironment });
+  const envChanged = () => { codeLensEmitter.fire(); visualEditor.refreshAll(); };
   const envWatcher = vscode.workspace.createFileSystemWatcher('**/http-client*.env.json');
-  envWatcher.onDidChange(() => codeLensEmitter.fire());
-  envWatcher.onDidCreate(() => codeLensEmitter.fire());
+  envWatcher.onDidChange(envChanged);
+  envWatcher.onDidCreate(envChanged);
+  envWatcher.onDidDelete(envChanged);
 
   context.subscriptions.push(
     output, statusBar, envWatcher, diagnostics,
@@ -844,6 +893,12 @@ function activate(context) {
     vscode.languages.registerCompletionItemProvider(selector, completionProvider, '{', '/', ' ', '.', '@', ':', '"', "'"),
     vscode.languages.registerHoverProvider(selector, hoverProvider),
     vscode.window.onDidChangeActiveTextEditor(updateStatusBar),
+    vscode.window.tabGroups.onDidChangeTabs(updateStatusBar),
+    vscode.window.registerCustomEditorProvider(VISUAL_EDITOR, visualEditor, {
+      webviewOptions: { retainContextWhenHidden: true }
+    }),
+    vscode.commands.registerCommand('httpClient.openVisualEditor', uri => openWith(uri, VISUAL_EDITOR)),
+    vscode.commands.registerCommand('httpClient.openTextEditor', uri => openWith(uri, 'default')),
     vscode.commands.registerCommand('httpClient.sendRequest', sendRequest),
     vscode.commands.registerCommand('httpClient.runAll', runAll),
     vscode.commands.registerCommand('httpClient.resendLast', resendLast),
@@ -851,6 +906,7 @@ function activate(context) {
     vscode.commands.registerCommand('httpClient.selectEnvironment', selectEnvironment),
     vscode.commands.registerCommand('httpClient.copyAsCurl', copyAsCurl),
     vscode.commands.registerCommand('httpClient.createEnvFile', createEnvFile),
+    vscode.commands.registerCommand('httpClient.editEnvironments', editEnvironments),
     vscode.commands.registerCommand('httpClient.showGlobals', () => {
       output.appendLine('Global variables (client.global):');
       output.appendLine(JSON.stringify(globals, null, 2));

@@ -3,6 +3,28 @@
 All notable changes to this extension are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.8] – 2026-10-24
+
+### Added
+
+- Visual editor for `.http` and `.rest` files (**Open in Visual Editor** in the editor title, the
+  Explorer context menu and the Command Palette): requests as cards with method, URL, query
+  parameter and header tables, body with content type buttons and *Format JSON*, scripts, tags,
+  in-place variables and comments. Requests can be sent, added, duplicated, moved and deleted;
+  the environment is selected in its toolbar. It edits the file itself and rewrites only the
+  changed request, so saving, undo and an open text editor work as usual. Files with merge
+  conflicts and diffs are always shown in the text editor.
+- Environment editor (**HTTP-Client: Edit Environments**, also in the environment list, the
+  visual editor and the editor title of environment files): `http-client.env.json` and
+  `http-client.private.env.json` as one table of variables and environments. Values, variables
+  and environments can be added, renamed, deleted and moved between the public and the private
+  file; every change is saved at once, and values that are not text keep their type.
+
+### Changed
+
+- Syntax highlighting: tag lines (`# @…`) and comments are also highlighted after a JSON or XML
+  body.
+
 ## [0.1.7] – 2026-10-21
 
 ### Added

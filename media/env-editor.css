@@ -1,0 +1,65 @@
+.table-wrap { overflow-x: auto; }
+
+.env-table {
+  border-collapse: collapse;
+  min-width: 100%;
+}
+
+.env-table th, .env-table td {
+  border: 1px solid var(--vscode-panel-border, var(--vscode-widget-border, transparent));
+  padding: 3px;
+  vertical-align: middle;
+  text-align: left;
+}
+
+.env-table th {
+  background: var(--vscode-sideBar-background, transparent);
+  font-weight: 600;
+  min-width: 180px;
+}
+
+.env-table th.active { border-top: 2px solid var(--vscode-charts-green); }
+.env-table td.active { background: color-mix(in srgb, var(--vscode-charts-green) 6%, transparent); }
+.env-table .var-col { min-width: 180px; position: sticky; left: 0; background: var(--vscode-editor-background); z-index: 1; }
+.env-table th.var-col { background: var(--vscode-sideBar-background, var(--vscode-editor-background)); }
+.env-table .add-col { min-width: 150px; font-weight: normal; }
+
+.env-head, .var-head, .cell-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.env-head .env-name { flex: 1; min-width: 60px; font-weight: 600; }
+.env-head span.env-name { padding: 4px 6px; }
+.env-head input.env-name, .var-head input.var-name, .env-table input.cell, .new-env {
+  background: transparent;
+  border-color: transparent;
+}
+.env-head input.env-name:hover, .var-head input.var-name:hover, .env-table input.cell:hover, .new-env:hover {
+  border-color: var(--vscode-input-border, var(--vscode-panel-border));
+}
+
+.var-head .var-name { flex: 1; font-family: var(--vscode-editor-font-family); }
+.new-row .var-name { width: 100%; }
+.new-env { width: 100%; }
+
+.cell-wrap input.cell {
+  flex: 1;
+  min-width: 80px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size);
+}
+
+.cell-wrap input.cell:disabled { opacity: .7; }
+.cell-wrap .btn.icon { opacity: 0; padding: 2px 4px; }
+.cell-wrap:hover .btn.icon, .cell-wrap .btn.lock.on, .cell-wrap:focus-within .btn.icon { opacity: 1; }
+.var-head .btn.icon { opacity: 0; }
+.var-head:hover .btn.icon { opacity: 1; }
+.icon-space { display: inline-block; width: 22px; }
+
+td.private { background: color-mix(in srgb, var(--vscode-charts-yellow) 7%, transparent); }
+.btn.active-env { color: var(--vscode-charts-green); }
+
+.hints { margin-top: 16px; }
+.empty.error { color: var(--vscode-errorForeground); }

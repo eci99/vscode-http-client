@@ -345,6 +345,33 @@ private file.
 
 Changes to the environment files take effect immediately.
 
+### Editing environments in a table
+
+**HTTP-Client: Edit Environments** shows both environment files as one table: a row per
+variable, a column per environment (`$shared` first). Open it from the Command Palette, with
+*Edit Environments…* at the end of the environment list (`Ctrl+Alt+Shift+E`), with the ✎ next to
+the environment in the [visual editor](#visual-editor), or with the icon in the editor title and
+the Explorer context menu of an environment file. It edits the files that the active `.http` file
+uses; if there are none yet, they are created next to it with the first change.
+
+* **Values:** click a cell, type, and leave it with `Tab` or `Enter` (`Escape` cancels). An empty
+  cell shows the `$shared` value that applies there; typing a value overrides it. ✕ removes a
+  value from one environment.
+* **Private values:** 🔒 marks values from `http-client.private.env.json`. Clicking the lock moves
+  a value to the other file; on an empty cell it chooses where the new value is written. New
+  values of a variable that is private elsewhere are private as well. *Hide private values* shows
+  them as dots.
+* **Variables:** *+ Variable* adds a variable with an empty value in every environment; its name
+  can be changed in place (in all environments), ✕ deletes it everywhere.
+* **Environments:** *+ Environment* adds a column, *+ $shared* the column for shared values; a
+  name is changed in place. *use* selects the environment for requests, 🗑 deletes it from both
+  files.
+
+Every change is saved at once. Only the changed values are touched: numbers and booleans stay
+numbers and booleans, and settings that are objects (such as `SSLConfiguration`) are kept and
+shown read-only. The files keep their indentation. If a file is not valid JSON, the table shows
+the error until it is fixed in the text editor.
+
 ## 7. Scripts
 
 Scripts are JavaScript. They run in a sandbox with the API described in the
@@ -662,6 +689,48 @@ Above every response:
 
 ## 12. Editor support
 
+### Visual editor
+
+The visual editor shows the requests of a `.http` file as a form, so requests can be created and
+changed without knowing the syntax. Open it with the **Open in Visual Editor** icon in the editor
+title, from the context menu of a `.http` file in the Explorer, with **HTTP-Client: Open in Visual
+Editor**, or with *Reopen Editor With…*. The **Open in Text Editor** icon (or **{ } Text**) goes
+back. To always open `.http` files in it, add
+`"workbench.editorAssociations": { "*.http": "httpClient.visualEditor" }` to the settings.
+
+Every request is a card with its method, name or title and URL. A card opens with a click and
+contains:
+
+| Part | Content |
+| --- | --- |
+| Request line | method, URL, HTTP version; **▶ Send** (also `Enter` in the URL, `Ctrl+Enter` anywhere in the card) |
+| Title, Name | the text after `###` and `# @name` |
+| Params | query parameters as a table. A URL with `?` – pasted or typed – is split into the table. *One parameter per line* writes them as indented `?` / `&` lines. |
+| Headers | headers as a table, with suggestions for names and values; quick buttons for a bearer token, Basic authentication and `Accept: application/json` |
+| Body | the body as text. The buttons set `Content-Type` (JSON, form, XML, text, multipart) and, for an empty body, insert a template. **Format JSON** pretty-prints a valid JSON body. `< ./file` and `<@ ./file` work as in the text. |
+| Scripts | pre-request script and response handler as written in the file (`< {% … %}`, `> ./handler.js`), with templates; the file for `>>` / `>>!` |
+| Options | the tags `@no-redirect`, `@no-log`, `@no-cookie-jar`, `@no-auto-encoding`, `@timeout`, `@connection-timeout` and any other tags |
+| Variables | in-place variables (`@name = value`) defined in this block |
+| Comments | the comment lines before the request |
+
+The first part of a file, before the first `###`, appears as the *File* card with its in-place
+variables and comments when it has no request.
+
+The toolbar adds a request at the end of the file, runs all requests, selects the environment
+(✎ opens the [environment editor](#editing-environments-in-a-table)) and filters the cards by name, title, method or URL (`Ctrl+F`). The icons of a card send,
+duplicate (the copy gets the name `…-copy`), move and delete the request.
+
+The visual editor works on the file itself: changes appear in an open text editor right away,
+the file is saved with `Ctrl+S`, and `Ctrl+Z` undoes changes, including deleted requests. Only
+the request that was changed is written anew; the rest of the file stays as it is. In a changed
+request, tags are written as `# @tag` after the comments, followed by the in-place variables and
+the pre-request script, and `# @name = x` becomes `# @name x`.
+
+Comparisons and merges always use the text editor: a file with merge conflicts (`<<<<<<<`,
+`=======`, `>>>>>>>`) opens as text, where VS Code's merge actions are available, and a diff –
+for example *Open Changes* in Source Control – is shown as a text diff, even while the file is
+open in the visual editor.
+
 ### Syntax highlighting
 
 Request lines, headers, variables, comments, tags and file references are highlighted. Scripts
@@ -743,12 +812,15 @@ All commands are in the Command Palette under **HTTP-Client**.
 | Resend Last Request | `Ctrl+Alt+Shift+L` |
 | Pick and Send Request… | `Ctrl+Alt+Shift+V` |
 | Select Environment | `Ctrl+Alt+Shift+E` |
+| Edit Environments | – |
 | Copy Request as cURL | – |
 | Create Environment File | – |
 | Show Global Variables | – |
 | Clear Global Variables | – |
 | Clear Cookies | – |
 | Open Documentation | – |
+| Open in Visual Editor | – |
+| Open in Text Editor | – (in the visual editor) |
 
 Shortcuts can be changed in *Preferences: Open Keyboard Shortcuts*.
 
