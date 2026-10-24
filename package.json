@@ -1,8 +1,8 @@
 {
   "name": "http-client-ij-style",
   "displayName": "HTTP-Client (IntelliJ style)",
-  "description": "Run .http files with the syntax of the IntelliJ HTTP Client: environments, {{variables}}, pre-request and response handler scripts, client.test/assert, cookies, GraphQL.",
-  "version": "0.1.8",
+  "description": "A complete REST client compatible with the IntelliJ HTTP Client: requests and environments in plain-text .http and JSON files that can also be edited visually. Variables, scripts, tests, cookies, GraphQL.",
+  "version": "0.1.9",
   "publisher": "eci99",
   "license": "MIT",
   "icon": "images/icon.png",

@@ -1,7 +1,11 @@
 # HTTP-Client (IntelliJ style)
 
-Runs `.http` / `.rest` files with the syntax of the **IntelliJ HTTP Client**, so existing
-request files from IntelliJ/WebStorm/PhpStorm work unchanged in VS Code: environments,
+A complete **REST client** for VS Code, compatible with the **IntelliJ HTTP Client**.
+Requests live in plain-text `.http` / `.rest` files and environments in `http-client.env.json`
+files – easy to read, diff and keep in version control – and both can also be edited
+visually, in a form for the requests and a table for the environments.
+
+Existing request files from IntelliJ/WebStorm/PhpStorm work unchanged: environments,
 `{{variables}}`, pre-request and response handler scripts, `client.test` / `client.assert`,
 cookies and GraphQL.
 
@@ -11,13 +15,13 @@ cookies and GraphQL.
 > In the meantime, a visual editor and more have been added, and it has become a handy REST
 > client – give it a try.
 
-![Visual editor: selecting an environment, adding a header, sending the request and editing the environments in a table](images/demo.gif)
-
 📖 **[Full documentation](docs/documentation.md)** – request syntax, variables, environments,
 scripts and the complete script API, tags, cookies, the response tab and the differences from
 the IntelliJ HTTP Client.
 
 🧪 **[Examples](examples)** – ready-to-run `.http` and environment files for every feature.
+
+![Visual editor: selecting an environment, adding a header, sending the request and editing the environments in a table](images/demo.gif)
 
 ## Quick start
 

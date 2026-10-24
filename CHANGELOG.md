@@ -3,6 +3,13 @@
 All notable changes to this extension are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.9] – 2026-10-24
+
+### Changed
+
+- Description and README introduction: a complete REST client, compatible with the IntelliJ HTTP
+  Client, whose plain-text request and environment files can also be edited visually.
+
 ## [0.1.8] – 2026-10-24
 
 ### Added
