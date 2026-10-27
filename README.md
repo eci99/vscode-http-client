@@ -8,6 +8,8 @@ visually, in a form for the requests and a table for the environments.
 Existing request files from IntelliJ/WebStorm/PhpStorm work unchanged: environments,
 `{{variables}}`, pre-request and response handler scripts, `client.test` / `client.assert`,
 cookies and GraphQL.
+Files written for the **REST Client** extension (and its clones), which use the same file format,
+as well as for **httpYac**, should work too.
 
 > **Author's note:** I mainly built this extension to keep using the environment and `.http`
 > files I already had for the IntelliJ HTTP Client. I mostly use it in a fire-and-forget way,

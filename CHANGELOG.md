@@ -3,6 +3,18 @@
 All notable changes to this extension are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.10] – 2026-10-27
+
+### Fixed
+
+- The file icon for `.http`, `.rest` and `.http-response` files is shown again: the icon was
+  missing from the package.
+
+### Changed
+
+- README: files written for the REST Client extension (and its clones) and for httpYac, which use
+  the same file format, should work too.
+
 ## [0.1.9] – 2026-10-24
 
 ### Changed
