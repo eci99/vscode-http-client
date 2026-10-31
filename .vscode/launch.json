@@ -1,0 +1,52 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension (examples)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ]
+    },
+    {
+      "name": "Run Extension (examples)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "--disable-extensions",
+        "${workspaceFolder}/examples"
+      ]
+    },
+    {
+      "name": "Run Extension (with installed extensions)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "${workspaceFolder}/examples"
+      ]
+    },
+    {
+      "name": "Tests",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/test/run-tests.js",
+      "console": "integratedTerminal",
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    },
+    {
+      "name": "Smoke Test (mocked VS Code)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/test/vscode-smoke.js",
+      "console": "integratedTerminal",
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    }
+  ]
+}

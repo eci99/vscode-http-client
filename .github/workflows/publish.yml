@@ -1,0 +1,62 @@
+# Publishes the extension to the VS Code Marketplace and Open VSX when a version tag
+# such as v1.2.3 or 1.2.3 is pushed, and creates a GitHub release with the .vsix.
+# Both registries accept a short-lived OIDC token from this workflow (trusted
+# publishing), so no access token is stored in the repository. The Marketplace policy
+# and the Open VSX trusted publisher must name this repository and publish.yml.
+# The same file is used in all extension repositories; keep them identical.
+name: Publish
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # for the GitHub release
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Check that the tag matches the version in package.json
+        if: github.ref_type == 'tag'
+        run: test "$(node -p "require('./package.json').version")" = "${GITHUB_REF_NAME#v}"
+
+      - name: Install dependencies
+        run: if [ -f package-lock.json ]; then npm ci --ignore-scripts; fi
+
+      - run: npm test --if-present
+
+      - name: Package
+        run: |
+          npx --yes @vscode/vsce package --out extension.vsix
+          npx --yes @vscode/vsce ls
+
+      - name: Publish to the VS Code Marketplace
+        run: npx --yes @vscode/vsce publish --oidc --packagePath extension.vsix
+
+      - name: Publish to Open VSX
+        run: npx --yes ovsx publish extension.vsix --trusted-publishing
+
+      # The release notes are the section of this version in CHANGELOG.md
+      # (headings like "## 1.2.3 - date" or "## [1.2.3] – date").
+      - name: Create the GitHub release
+        if: github.ref_type == 'tag'
+        run: |
+          awk -v v="${GITHUB_REF_NAME#v}" '/^## /{if(f)exit; h=$2; gsub(/[][]/,"",h); if(h==v){f=1;next}} f' CHANGELOG.md | sed '/./,$!d' > notes.md
+          name="$(node -p "require('./package.json').name")-${GITHUB_REF_NAME#v}.vsix"
+          cp extension.vsix "$name"
+          gh release create "$GITHUB_REF_NAME" "$name" --title "$GITHUB_REF_NAME" --notes-file notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
