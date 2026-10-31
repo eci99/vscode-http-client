@@ -2,7 +2,7 @@
   "name": "http-client-ij-style",
   "displayName": "HTTP-Client (IntelliJ style)",
   "description": "A complete REST client compatible with the IntelliJ HTTP Client: requests and environments in plain-text .http and JSON files that can also be edited visually. Variables, scripts, tests, cookies, GraphQL.",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "publisher": "eci99",
   "license": "MIT",
   "icon": "images/icon.png",
