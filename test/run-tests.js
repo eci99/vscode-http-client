@@ -166,6 +166,7 @@ test('OAuth2 authorization code with PKCE, state validation and token cache', as
     openExternal: async url => {
       browserCalls++;
       const auth = new URL(url);
+      assert.strictEqual(auth.searchParams.get('prompt'), browserCalls > 2 ? 'login' : null);
       assert.strictEqual(auth.searchParams.get('response_type'), 'code');
       assert.strictEqual(auth.searchParams.get('client_id'), 'login');
       assert.strictEqual(auth.searchParams.get('code_challenge_method'), 'S256');
@@ -210,6 +211,41 @@ test('OAuth2 authorization code with PKCE, state validation and token cache', as
   await assert.rejects(provider('missing', envVars), /profile "missing" not found/);
   await provider('keycloak-rind', envVars, 'another-environment');
   assert.strictEqual(browserCalls, 2);
+  provider.clear();
+  assert.strictEqual(await provider('keycloak-rind', envVars), 'test-token');
+  assert.strictEqual(browserCalls, 3);
+  assert.strictEqual(await provider('keycloak-rind', envVars, 'another-environment'), 'test-token');
+  assert.strictEqual(browserCalls, 4);
+  assert.strictEqual(tokenCalls, 4);
+});
+
+test('OAuth2 cache clearing invalidates an in-flight token exchange', async () => {
+  let exchanges = 0;
+  let provider;
+  provider = createAuthProvider({
+    openExternal: async url => {
+      const auth = new URL(url);
+      assert.strictEqual(auth.searchParams.get('prompt'), exchanges ? 'login' : null);
+      const callback = new URL(auth.searchParams.get('redirect_uri'));
+      callback.searchParams.set('state', auth.searchParams.get('state'));
+      callback.searchParams.set('code', 'code');
+      assert.strictEqual((await fetch(callback)).status, 200);
+      return true;
+    },
+    fetch: async () => {
+      exchanges++;
+      if (exchanges === 1) provider.clear();
+      return new Response(JSON.stringify({ access_token: `token-${exchanges}`, expires_in: 300 }));
+    }
+  });
+  const envVars = { Security: { Auth: { 'oauth-example': {
+    Type: 'OAuth2', 'Grant Type': 'Authorization Code', 'Client ID': 'test',
+    'Auth URL': 'https://auth.example/auth', 'Token URL': 'https://auth.example/token'
+  } } } };
+  await assert.rejects(provider('oauth-example', envVars), /cache was cleared during login/);
+  assert.strictEqual(await provider('oauth-example', envVars), 'token-2');
+  assert.strictEqual(await provider('oauth-example', envVars), 'token-2');
+  assert.strictEqual(exchanges, 2);
 });
 
 test('OAuth2 defaults to a free callback port even when 8080 is occupied', async () => {

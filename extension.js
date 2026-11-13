@@ -932,6 +932,10 @@ function activate(context) {
       persistState();
       vscode.window.setStatusBarMessage('$(check) Global variables cleared', 3000);
     }),
+    vscode.commands.registerCommand('httpClient.clearAuthTokens', () => {
+      resolveAuthToken.clear();
+      vscode.window.setStatusBarMessage('$(check) OAuth2 tokens cleared; the next request requires login', 3000);
+    }),
     vscode.commands.registerCommand('httpClient.clearCookies', () => {
       cookieJar.clear();
       persistState();

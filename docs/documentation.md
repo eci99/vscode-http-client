@@ -393,7 +393,12 @@ private environment file: merging is shallow, so private `Security` replaces pub
 
 Tokens are cached only in memory, separately by environment directory, environment name and
 profile configuration, until shortly before `expires_in`. Expiry starts a new browser login;
-refresh tokens are not used. Login times out after three minutes. Token acquisition happens
+refresh tokens are not used. To log in again, run **HTTP-Client: Clear OAuth2 Tokens** from the
+Command Palette (`Ctrl+Shift+P`). It clears all cached profiles and requests `prompt=login`
+on their next login so a provider such as Keycloak prompts for reauthentication. It does not
+revoke issued tokens or terminate the provider's browser session; providers must honor the
+login prompt. Tokens from in-flight logins are discarded if the cache is cleared during login.
+Login times out after three minutes. Token acquisition happens
 when sending requests, not in hovers, cURL previews or pre-request scripts.
 
 For WSL and remote extension hosts, the extension asks VS Code to forward the callback before
@@ -876,6 +881,7 @@ All commands are in the Command Palette under **HTTP-Client**.
 | Create Environment File | – |
 | Show Global Variables | – |
 | Clear Global Variables | – |
+| Clear OAuth2 Tokens | – |
 | Clear Cookies | – |
 | Open Documentation | – |
 | Open in Visual Editor | – |

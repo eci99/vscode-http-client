@@ -14,7 +14,7 @@ function endpoint(value, name) {
   return url;
 }
 
-async function authorize(config, openExternal, timeoutMs, externalizeRedirect) {
+async function authorize(config, openExternal, timeoutMs, externalizeRedirect, forceLogin) {
   const authUrl = endpoint(config['Auth URL'], 'Auth URL');
   const redirect = endpoint(config['Redirect URL'] || 'http://localhost:0/', 'Redirect URL');
   if (redirect.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(redirect.hostname)
@@ -73,6 +73,7 @@ async function authorize(config, openExternal, timeoutMs, externalizeRedirect) {
     authUrl.searchParams.set('state', state);
     authUrl.searchParams.set('code_challenge', crypto.createHash('sha256').update(verifier).digest('base64url'));
     authUrl.searchParams.set('code_challenge_method', 'S256');
+    if (forceLogin) authUrl.searchParams.set('prompt', 'login');
     if (config.Scope) authUrl.searchParams.set('scope', config.Scope);
     timer = setTimeout(() => rejectCode(new Error('OAuth2: browser login timed out')), timeoutMs);
     if (!await openExternal(authUrl.toString())) throw new Error('OAuth2: could not open the login URL');
@@ -90,7 +91,9 @@ async function authorize(config, openExternal, timeoutMs, externalizeRedirect) {
 function createAuthProvider({ openExternal, fetch: doFetch = fetch, timeoutMs = 180000, externalizeRedirect = url => url }) {
   const cache = new Map();
   const pending = new Map();
-  return async (id, envVars, scope = '') => {
+  const reauthRequired = new Set();
+  let generation = 0;
+  const provider = async (id, envVars, scope = '') => {
     const profiles = envVars && envVars.Security && envVars.Security.Auth;
     const config = profiles && Object.prototype.hasOwnProperty.call(profiles, id) && profiles[id];
     if (!config) throw new Error(`OAuth2: Security.Auth profile "${id}" not found in the selected environment`);
@@ -105,8 +108,10 @@ function createAuthProvider({ openExternal, fetch: doFetch = fetch, timeoutMs = 
     const cached = cache.get(key);
     if (cached && cached.expiresAt > Date.now()) return cached.token;
     if (pending.has(key)) return pending.get(key);
+    const loginGeneration = generation;
     const login = (async () => {
-      const { code, verifier, redirectUri } = await authorize(config, openExternal, timeoutMs, externalizeRedirect);
+      const { code, verifier, redirectUri } = await authorize(config, openExternal, timeoutMs, externalizeRedirect, reauthRequired.has(key));
+      if (loginGeneration !== generation) throw new Error('OAuth2: token cache was cleared during login; send the request again');
       const body = new URLSearchParams({
         grant_type: 'authorization_code', client_id: config['Client ID'],
         code, redirect_uri: redirectUri, code_verifier: verifier
@@ -119,16 +124,25 @@ function createAuthProvider({ openExternal, fetch: doFetch = fetch, timeoutMs = 
       if (!response.ok) throw new Error(`OAuth2: token exchange failed (HTTP ${response.status})`);
       const data = await response.json();
       if (typeof data.access_token !== 'string' || !data.access_token) throw new Error('OAuth2: token response has no access_token');
+      if (loginGeneration !== generation) throw new Error('OAuth2: token cache was cleared during login; send the request again');
       const expiresIn = Number(data.expires_in);
       cache.set(key, {
         token: data.access_token,
         expiresAt: Date.now() + (Number.isFinite(expiresIn) && expiresIn > 0 ? Math.max(0, expiresIn - 30) * 1000 : 0)
       });
+      reauthRequired.delete(key);
       return data.access_token;
     })();
     pending.set(key, login);
-    try { return await login; } finally { pending.delete(key); }
+    try { return await login; } finally { if (pending.get(key) === login) pending.delete(key); }
   };
+  provider.clear = () => {
+    for (const key of [...cache.keys(), ...pending.keys()]) reauthRequired.add(key);
+    generation++;
+    cache.clear();
+    pending.clear();
+  };
+  return provider;
 }
 
 module.exports = { createAuthProvider };

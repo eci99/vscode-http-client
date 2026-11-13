@@ -181,6 +181,8 @@ server.listen(0, '127.0.0.1', async () => {
 
     // choose environment "dev" directly
     state.set('httpClient.env', 'dev');
+    assert.strictEqual(typeof commands['httpClient.clearAuthTokens'], 'function');
+    await commands['httpClient.clearAuthTokens']();
 
     // Outline: one symbol per request, from its ### line to its last line
     const symbols = providers.symbols.provideDocumentSymbols(doc);

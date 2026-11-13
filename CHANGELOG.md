@@ -3,6 +3,14 @@
 All notable changes to this extension are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.14] – 2026-11-13
+
+### Added
+
+- **HTTP-Client: Clear OAuth2 Tokens** removes all cached access tokens. The next login for
+  cleared profiles requests reauthentication with `prompt=login`. In-flight logins cannot
+  restore cleared tokens or send the API request using them.
+
 ## [0.1.13] – 2026-11-13
 
 ### Changed
