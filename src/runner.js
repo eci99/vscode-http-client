@@ -158,7 +158,8 @@ async function runRequest(req, ctx) {
   const log = line => result.logs.push(line);
   const requestVars = {};
   const state = {
-    requestVars, fileVars: ctx.fileVars, globals: ctx.globals, envVars: ctx.envVars, projectRoot: ctx.projectRoot
+    requestVars, fileVars: ctx.fileVars, globals: ctx.globals, envVars: ctx.envVars, projectRoot: ctx.projectRoot,
+    authTokens: Object.create(null)
   };
   const globalHeaders = ctx.globalHeaders || {};
   const sandboxOpts = {
@@ -178,7 +179,17 @@ async function runRequest(req, ctx) {
 
     // 2. Build
     const missing = new Set();
-    const built = buildRequest(req, state, ctx.baseDir, missing);
+    let built = buildRequest(req, state, ctx.baseDir, missing);
+    for (const name of missing) {
+      const auth = name.match(/^\$auth\.token\(\s*(['"])([^'"]+)\1\s*\)$/);
+      if (!auth) continue;
+      if (!ctx.resolveAuthToken) throw new Error('OAuth2: token acquisition is unavailable in this execution context');
+      state.authTokens[auth[2]] = await ctx.resolveAuthToken(auth[2], ctx.envVars);
+    }
+    if (Object.keys(state.authTokens).length) {
+      missing.clear();
+      built = buildRequest(req, state, ctx.baseDir, missing);
+    }
     // Headers from client.global.headers.set(), unless the request sets them itself
     for (const [name, value] of Object.entries(globalHeaders)) {
       if (!built.headers.some(h => h.name.toLowerCase() === name.toLowerCase())) built.headers.push({ name, value });

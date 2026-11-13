@@ -345,6 +345,53 @@ private file.
 
 Changes to the environment files take effect immediately.
 
+### OAuth2 Authorization Code
+
+Reference an OAuth2 profile from `Security.Auth` of the selected environment with
+`{{$auth.token("oauth-example")}}`:
+
+```json
+{
+  "test": {
+    "baseUrl": "https://api.example.com/rest/v1",
+    "Security": {
+      "Auth": {
+        "oauth-example": {
+          "Type": "OAuth2",
+          "Grant Type": "Authorization Code",
+          "Client ID": "login",
+          "Auth URL": "https://auth.example.com/realms/RIND/protocol/openid-connect/auth",
+          "Token URL": "https://auth.example.com/realms/RIND/protocol/openid-connect/token",
+          "Redirect URL": "http://localhost:8080/",
+          "Scope": "openid"
+        }
+      }
+    }
+  }
+}
+```
+
+```http
+GET {{baseUrl}}/person
+Authorization: Bearer {{$auth.token("oauth-example")}}
+```
+
+Select `test` and send the request. In a trusted workspace the extension opens the browser,
+receives the authorization code on a loopback listener, and exchanges it with PKCE (S256)
+and validated `state`. Authentication failures stop the API request.
+
+`Redirect URL` defaults to `http://localhost:8080/`. Register that exact URL as a valid redirect
+URI for the provider's client (for Keycloak, enable Standard Flow). If the port is occupied,
+choose another loopback port in both configurations. `Scope` and `Client Secret` are optional.
+Auth and token endpoints require HTTPS except on loopback. Keep confidential profiles in the
+private environment file: merging is shallow, so private `Security` replaces public `Security`.
+
+Tokens are cached only in memory, separately by environment directory, environment name and
+profile configuration, until shortly before `expires_in`. Expiry starts a new browser login;
+refresh tokens are not used. Login times out after three minutes. Token acquisition happens
+when sending requests, not in hovers, cURL previews or pre-request scripts. For SSH, containers
+or other remote extension hosts, forward the callback port to the browser's machine.
+
 ### Editing environments in a table
 
 **HTTP-Client: Edit Environments** shows both environment files as one table: a row per
@@ -847,12 +894,14 @@ Supported with limitations:
 * **Global headers** last until VS Code is closed; global variables and cookies are stored per
   workspace.
 * **`jwt`:** keys are strings or PEM, not `CryptoKey` objects.
+* **OAuth2:** Authorization Code with PKCE is supported; other grant types and refresh tokens
+  are not. See [OAuth2 Authorization Code](#oauth2-authorization-code).
 
 Not supported:
 
 * WebSocket and gRPC requests, `import` / `run`, shared scripts `={% %}`
 * Collections in variables (`{{users[*].name}}`), `request.iteration()`, `request.templateValue()`
-* `Authorization: Digest`, OAuth 2.0 (`{{$auth.token(…)}}`)
+* `Authorization: Digest`
 * `crypto.subtle`, DOM/XML response bodies (`DOMParser`), streaming responses (`onEachLine`,
   `onEachMessage`)
 * `exec`, `execSync` and other shell commands, `sleep`, `setTimeout`

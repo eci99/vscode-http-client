@@ -15,6 +15,7 @@ const intellisense = require('../src/intellisense');
 const { fileReferences, movedReferenceEdits } = require('../src/file-references');
 const visual = require('../src/visual-model');
 const envs = require('../src/env-model');
+const { createAuthProvider } = require('../src/auth');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'http-client-'));
 fs.writeFileSync(path.join(tmp, 'payload.json'), '{"from":"file","user":"{{user}}"}');
@@ -140,6 +141,98 @@ test('variable precedence: environment > global > in-place > request', () => {
   assert.strictEqual(makeResolver({ ...all, envVars: {} })('v'), 'global');
   assert.strictEqual(makeResolver({ ...all, envVars: {}, globals: {} })('v'), 'file');
   assert.strictEqual(makeResolver({ requestVars: { v: 'request' } })('v'), 'request');
+});
+
+test('OAuth2 token variable', () => {
+  const { makeResolver } = require('../src/variables');
+  const resolve = makeResolver({ authTokens: { 'keycloak-rind': 'access-token' } });
+  assert.strictEqual(resolve('$auth.token("keycloak-rind")'), 'access-token');
+  assert.strictEqual(resolve("$auth.token( 'keycloak-rind' )"), 'access-token');
+  assert.strictEqual(resolve('$auth.token("unknown")'), undefined);
+});
+
+test('OAuth2 authorization code with PKCE, state validation and token cache', async () => {
+  let browserCalls = 0;
+  let tokenCalls = 0;
+  let challenge;
+  let redirectUri;
+  const config = {
+    Type: 'OAuth2', 'Grant Type': 'Authorization Code', 'Client ID': 'login',
+    'Auth URL': 'https://auth.example/authorize', 'Token URL': 'https://auth.example/token',
+    'Redirect URL': 'http://127.0.0.1:0/callback', Scope: 'openid'
+  };
+  const envVars = { Security: { Auth: { 'keycloak-rind': config } } };
+  const provider = createAuthProvider({
+    openExternal: async url => {
+      browserCalls++;
+      const auth = new URL(url);
+      assert.strictEqual(auth.searchParams.get('response_type'), 'code');
+      assert.strictEqual(auth.searchParams.get('client_id'), 'login');
+      assert.strictEqual(auth.searchParams.get('code_challenge_method'), 'S256');
+      assert.strictEqual(auth.searchParams.get('scope'), 'openid');
+      challenge = auth.searchParams.get('code_challenge');
+      redirectUri = auth.searchParams.get('redirect_uri');
+      const callback = new URL(redirectUri);
+      callback.searchParams.set('code', 'test-code');
+      callback.searchParams.set('state', 'wrong');
+      assert.strictEqual((await fetch(callback)).status, 400);
+      callback.searchParams.set('state', auth.searchParams.get('state'));
+      assert.strictEqual((await fetch(callback)).status, 200);
+      return true;
+    },
+    fetch: async (url, options) => {
+      tokenCalls++;
+      assert.strictEqual(url, config['Token URL']);
+      assert.strictEqual(options.redirect, 'error');
+      assert.strictEqual(options.body.get('grant_type'), 'authorization_code');
+      assert.strictEqual(options.body.get('code'), 'test-code');
+      assert.strictEqual(options.body.get('redirect_uri'), redirectUri);
+      assert.strictEqual(require('crypto').createHash('sha256').update(options.body.get('code_verifier')).digest('base64url'), challenge);
+      return new Response(JSON.stringify({ access_token: 'test-token', expires_in: 300 }));
+    }
+  });
+  const req = parse('### Alle berechtigte Personen holen\nGET {{baseUrl}}/person\nAuthorization: Bearer {{$auth.token("keycloak-rind")}}').requests[0];
+  envVars.baseUrl = 'https://api.example/rest/v1';
+  const ctx = {
+    baseDir: tmp, envVars, globals: {}, resolveAuthToken: provider,
+    fetch: async (url, options) => {
+      assert.strictEqual(url, 'https://api.example/rest/v1/person');
+      assert.strictEqual(options.headers.get('authorization'), 'Bearer test-token');
+      return new Response('{}');
+    }
+  };
+  const result = await runRequest(req, ctx);
+  assert.strictEqual(result.error, null);
+  assert.deepStrictEqual(result.missing, []);
+  assert.strictEqual(await provider('keycloak-rind', envVars), 'test-token');
+  assert.strictEqual(browserCalls, 1);
+  assert.strictEqual(tokenCalls, 1);
+  await assert.rejects(provider('missing', envVars), /profile "missing" not found/);
+  await provider('keycloak-rind', envVars, 'another-environment');
+  assert.strictEqual(browserCalls, 2);
+});
+
+test('OAuth2 failures do not send the API request', async () => {
+  const req = parse('GET http://localhost/echo\nAuthorization: Bearer {{$auth.token("missing")}}').requests[0];
+  let sent = false;
+  const result = await runRequest(req, {
+    baseDir: tmp, globals: {}, envVars: {},
+    resolveAuthToken: createAuthProvider({ openExternal: async () => { throw new Error('Unexpected login'); } }),
+    fetch: async () => { sent = true; return new Response('{}'); }
+  });
+  assert.match(result.error, /profile "missing" not found/);
+  assert.strictEqual(sent, false);
+  const provider = createAuthProvider({ openExternal: async () => false });
+  const profile = {
+    Type: 'OAuth2', 'Grant Type': 'Authorization Code', 'Client ID': 'login',
+    'Auth URL': 'https://auth.example/auth', 'Token URL': 'http://remote.example/token'
+  };
+  await assert.rejects(provider('auth', { Security: { Auth: { auth: profile } } }), /must use HTTPS/);
+  profile['Token URL'] = 'https://auth.example/token';
+  profile['Redirect URL'] = 'https://remote.example/callback';
+  await assert.rejects(provider('auth', { Security: { Auth: { auth: profile } } }), /HTTP loopback URL/);
+  profile['Redirect URL'] = 'http://127.0.0.1:0/';
+  await assert.rejects(provider('auth', { Security: { Auth: { auth: profile } } }), /could not open/);
 });
 
 test('runner end-to-end', async () => {

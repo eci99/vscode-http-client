@@ -13,6 +13,11 @@ const intellisense = require('./src/intellisense');
 const { fileReferences: fileReferencesIn, movedReferenceEdits } = require('./src/file-references');
 const { VisualEditorProvider, VIEW_TYPE: VISUAL_EDITOR, openWith } = require('./src/visual-editor');
 const { EnvironmentEditor } = require('./src/env-editor');
+const { createAuthProvider } = require('./src/auth');
+
+const resolveAuthToken = createAuthProvider({
+  openExternal: url => vscode.env.openExternal(vscode.Uri.parse(url))
+});
 
 const LANG = 'http-client';
 const RESPONSE_SCHEME = 'http-client-response';
@@ -355,6 +360,10 @@ function makeContext(doc, parsed) {
     envVars: envs.get(envs.names.includes(envName) ? envName : null),
     envName,
     envFound: envs.names.includes(envName),
+    resolveAuthToken: (id, envVars) => {
+      if (!vscode.workspace.isTrusted) throw new Error('OAuth2: trust this workspace before starting a browser login');
+      return resolveAuthToken(id, envVars, JSON.stringify([envs.files && envs.files.dir, envName]));
+    },
     globals,
     globalHeaders,
     projectRoot: (vscode.workspace.getWorkspaceFolder(doc.uri) || { uri: { fsPath: baseDirFor(doc) } }).uri.fsPath,

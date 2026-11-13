@@ -38,6 +38,7 @@ const DYNAMIC_VARIABLES = [
   ['$random.hexadecimal(10)', 'Random hex string'],
   ['$random.email', 'Random e-mail address'],
   ['$env.NAME', 'OS environment variable'],
+  ['$auth.token("auth-id")', 'OAuth2 access token from Security.Auth'],
   ['$projectRoot', 'Workspace folder of the .http file']
 ];
 
@@ -89,6 +90,8 @@ function makeResolver(state) {
   const resolve = (name, depth) => {
     if (depth > 20) return undefined;
     if (name === '$projectRoot') return state.projectRoot;
+    const auth = name.match(/^\$auth\.token\(\s*(['"])([^'"]+)\1\s*\)$/);
+    if (auth) return state.authTokens && state.authTokens[auth[2]];
     if (name.startsWith('$')) return resolveDynamic(name);
     for (const src of sources()) {
       if (src && Object.prototype.hasOwnProperty.call(src, name)) {

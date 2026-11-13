@@ -3,6 +3,19 @@
 All notable changes to this extension are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.12] – 2026-11-13
+
+### Added
+
+- OAuth2 Authorization Code profiles from environment `Security.Auth`, referenced with
+  `{{$auth.token("profile-id")}}`: browser login, loopback callback, PKCE, state validation
+  and in-memory access-token caching.
+
+### Fixed
+
+- OAuth2 token expressions are resolved before sending the request instead of being reported
+  as unresolved variables. Authentication failures prevent the API request from being sent.
+
 ## [0.1.11] – 2026-10-31
 
 ### Changed
