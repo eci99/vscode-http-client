@@ -16,7 +16,8 @@ const { EnvironmentEditor } = require('./src/env-editor');
 const { createAuthProvider } = require('./src/auth');
 
 const resolveAuthToken = createAuthProvider({
-  openExternal: url => vscode.env.openExternal(vscode.Uri.parse(url))
+  openExternal: url => vscode.env.openExternal(vscode.Uri.parse(url)),
+  externalizeRedirect: async url => (await vscode.env.asExternalUri(vscode.Uri.parse(url))).toString()
 });
 
 const LANG = 'http-client';

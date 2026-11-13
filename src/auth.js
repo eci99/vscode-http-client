@@ -14,9 +14,9 @@ function endpoint(value, name) {
   return url;
 }
 
-async function authorize(config, openExternal, timeoutMs) {
+async function authorize(config, openExternal, timeoutMs, externalizeRedirect) {
   const authUrl = endpoint(config['Auth URL'], 'Auth URL');
-  const redirect = endpoint(config['Redirect URL'] || 'http://localhost:8080/', 'Redirect URL');
+  const redirect = endpoint(config['Redirect URL'] || 'http://localhost:0/', 'Redirect URL');
   if (redirect.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(redirect.hostname)
     || redirect.search || redirect.hash) {
     throw new Error('OAuth2: Redirect URL must be an HTTP loopback URL without query or fragment');
@@ -53,19 +53,30 @@ async function authorize(config, openExternal, timeoutMs) {
   try {
     await new Promise((resolve, reject) => {
       server.once('error', reject);
-      server.listen(redirect.port ? Number(redirect.port) : 80, redirect.hostname.replace(/^\[|\]$/g, ''), resolve);
+      const host = redirect.hostname === 'localhost' ? '127.0.0.1' : redirect.hostname.replace(/^\[|\]$/g, '');
+      server.listen(redirect.port ? Number(redirect.port) : 80, host, resolve);
     });
     redirect.port = String(server.address().port);
+    const browserRedirect = endpoint(await externalizeRedirect(redirect.toString()), 'forwarded Redirect URL');
+    if (browserRedirect.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(browserRedirect.hostname)
+      || browserRedirect.pathname !== redirect.pathname || browserRedirect.search || browserRedirect.hash) {
+      throw new Error('OAuth2: callback forwarding must preserve the path and use an HTTP loopback URL');
+    }
+    const configuredRedirect = config['Redirect URL'] && new URL(config['Redirect URL']);
+    if (configuredRedirect && configuredRedirect.port !== '0' && browserRedirect.toString() !== redirect.toString()) {
+      throw new Error('OAuth2: configured Redirect URL could not be forwarded unchanged; free its local port or use port 0');
+    }
+    const redirectUri = browserRedirect.toString();
     authUrl.searchParams.set('response_type', 'code');
     authUrl.searchParams.set('client_id', config['Client ID']);
-    authUrl.searchParams.set('redirect_uri', redirect.toString());
+    authUrl.searchParams.set('redirect_uri', redirectUri);
     authUrl.searchParams.set('state', state);
     authUrl.searchParams.set('code_challenge', crypto.createHash('sha256').update(verifier).digest('base64url'));
     authUrl.searchParams.set('code_challenge_method', 'S256');
     if (config.Scope) authUrl.searchParams.set('scope', config.Scope);
     timer = setTimeout(() => rejectCode(new Error('OAuth2: browser login timed out')), timeoutMs);
     if (!await openExternal(authUrl.toString())) throw new Error('OAuth2: could not open the login URL');
-    return { code: await codePromise, verifier, redirectUri: redirect.toString() };
+    return { code: await codePromise, verifier, redirectUri };
   } catch (error) {
     if (error.code === 'EADDRINUSE') throw new Error('OAuth2: callback port is in use; configure a different Redirect URL');
     throw error;
@@ -76,7 +87,7 @@ async function authorize(config, openExternal, timeoutMs) {
   }
 }
 
-function createAuthProvider({ openExternal, fetch: doFetch = fetch, timeoutMs = 180000 }) {
+function createAuthProvider({ openExternal, fetch: doFetch = fetch, timeoutMs = 180000, externalizeRedirect = url => url }) {
   const cache = new Map();
   const pending = new Map();
   return async (id, envVars, scope = '') => {
@@ -95,7 +106,7 @@ function createAuthProvider({ openExternal, fetch: doFetch = fetch, timeoutMs = 
     if (cached && cached.expiresAt > Date.now()) return cached.token;
     if (pending.has(key)) return pending.get(key);
     const login = (async () => {
-      const { code, verifier, redirectUri } = await authorize(config, openExternal, timeoutMs);
+      const { code, verifier, redirectUri } = await authorize(config, openExternal, timeoutMs, externalizeRedirect);
       const body = new URLSearchParams({
         grant_type: 'authorization_code', client_id: config['Client ID'],
         code, redirect_uri: redirectUri, code_verifier: verifier

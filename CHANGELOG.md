@@ -3,6 +3,21 @@
 All notable changes to this extension are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.13] – 2026-11-13
+
+### Changed
+
+- OAuth2 browser login now uses an automatically assigned free loopback port when
+  `Redirect URL` is omitted. Explicit redirect URLs continue to use their configured port;
+  port `0` explicitly requests automatic selection.
+
+### Fixed
+
+- A service occupying port `8080` no longer prevents OAuth2 login with the default settings.
+- WSL and remote callback addresses are forwarded through VS Code before browser login;
+  the browser-facing redirect URI is also used for the token exchange. Localhost listeners
+  bind to IPv4 loopback for WSL compatibility.
+
 ## [0.1.12] – 2026-11-13
 
 ### Added

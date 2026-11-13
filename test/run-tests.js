@@ -212,6 +212,106 @@ test('OAuth2 authorization code with PKCE, state validation and token cache', as
   assert.strictEqual(browserCalls, 2);
 });
 
+test('OAuth2 defaults to a free callback port even when 8080 is occupied', async () => {
+  const occupied = http.createServer();
+  let listening = false;
+  try {
+    await new Promise((resolve, reject) => {
+      occupied.once('error', reject);
+      occupied.listen(8080, '127.0.0.1', resolve);
+    });
+    listening = true;
+  } catch (error) {
+    if (error.code !== 'EADDRINUSE') throw error;
+  }
+  let redirectUri;
+  const profile = {
+    Type: 'OAuth2', 'Grant Type': 'Authorization Code', 'Client ID': 'login',
+    'Auth URL': 'https://auth.example/auth', 'Token URL': 'https://auth.example/token'
+  };
+  const provider = createAuthProvider({
+    externalizeRedirect: async url => {
+      const forwarded = new URL(url);
+      assert.strictEqual(forwarded.hostname, 'localhost');
+      forwarded.hostname = '127.0.0.1';
+      return forwarded.toString();
+    },
+    openExternal: async url => {
+      const auth = new URL(url);
+      redirectUri = auth.searchParams.get('redirect_uri');
+      const callback = new URL(redirectUri);
+      assert.strictEqual(callback.hostname, '127.0.0.1');
+      assert.ok(Number(callback.port) > 0);
+      assert.notStrictEqual(callback.port, '8080');
+      callback.searchParams.set('state', auth.searchParams.get('state'));
+      callback.searchParams.set('code', 'code');
+      assert.strictEqual((await fetch(callback)).status, 200);
+      return true;
+    },
+    fetch: async (_url, options) => {
+      assert.strictEqual(options.body.get('redirect_uri'), redirectUri);
+      return new Response(JSON.stringify({ access_token: 'token' }));
+    }
+  });
+  try {
+    assert.strictEqual(await provider('oauth-example', { Security: { Auth: { 'oauth-example': profile } } }), 'token');
+    profile['Redirect URL'] = 'http://localhost:8080/';
+    await assert.rejects(provider('oauth-example', { Security: { Auth: { 'oauth-example': profile } } }), /callback port is in use/);
+  } finally {
+    if (listening) await new Promise(resolve => occupied.close(resolve));
+  }
+});
+
+test('OAuth2 forwarded callback uses the browser-facing port for the token exchange', async () => {
+  let internalUrl;
+  let browserUri;
+  const forwarder = http.createServer((req, res) => {
+    const upstream = http.request(new URL(req.url, internalUrl), incoming => {
+      res.writeHead(incoming.statusCode, incoming.headers);
+      incoming.pipe(res);
+    });
+    upstream.on('error', () => res.writeHead(502).end());
+    req.pipe(upstream);
+  });
+  await new Promise(resolve => forwarder.listen(0, '127.0.0.1', resolve));
+  const config = {
+    Type: 'OAuth2', 'Grant Type': 'Authorization Code', 'Client ID': 'test',
+    'Auth URL': 'https://auth.example/auth', 'Token URL': 'https://auth.example/token'
+  };
+  const provider = createAuthProvider({
+    externalizeRedirect: async url => {
+      internalUrl = url;
+      const forwarded = new URL(url);
+      forwarded.hostname = '127.0.0.1';
+      forwarded.port = String(forwarder.address().port);
+      browserUri = forwarded.toString();
+      assert.notStrictEqual(new URL(internalUrl).port, forwarded.port);
+      return browserUri;
+    },
+    openExternal: async url => {
+      const auth = new URL(url);
+      assert.strictEqual(auth.searchParams.get('redirect_uri'), browserUri);
+      const callback = new URL(browserUri);
+      callback.searchParams.set('state', auth.searchParams.get('state'));
+      callback.searchParams.set('code', 'forwarded-code');
+      assert.strictEqual((await fetch(callback)).status, 200);
+      return true;
+    },
+    fetch: async (_url, options) => {
+      assert.strictEqual(options.body.get('redirect_uri'), browserUri);
+      return new Response(JSON.stringify({ access_token: 'forwarded-token' }));
+    }
+  });
+  try {
+    assert.strictEqual(await provider('oauth-example', { Security: { Auth: { 'oauth-example': config } } }), 'forwarded-token');
+    config['Redirect URL'] = 'http://localhost:18080/';
+    await assert.rejects(provider('oauth-example', { Security: { Auth: { 'oauth-example': config } } }), /configured Redirect URL could not be forwarded unchanged/);
+  } finally {
+    forwarder.closeAllConnections();
+    await new Promise(resolve => forwarder.close(resolve));
+  }
+});
+
 test('OAuth2 failures do not send the API request', async () => {
   const req = parse('GET http://localhost/echo\nAuthorization: Bearer {{$auth.token("missing")}}').requests[0];
   let sent = false;

@@ -362,7 +362,6 @@ Reference an OAuth2 profile from `Security.Auth` of the selected environment wit
           "Client ID": "login",
           "Auth URL": "https://auth.example.com/realms/RIND/protocol/openid-connect/auth",
           "Token URL": "https://auth.example.com/realms/RIND/protocol/openid-connect/token",
-          "Redirect URL": "http://localhost:8080/",
           "Scope": "openid"
         }
       }
@@ -380,17 +379,30 @@ Select `test` and send the request. In a trusted workspace the extension opens t
 receives the authorization code on a loopback listener, and exchanges it with PKCE (S256)
 and validated `state`. Authentication failures stop the API request.
 
-`Redirect URL` defaults to `http://localhost:8080/`. Register that exact URL as a valid redirect
-URI for the provider's client (for Keycloak, enable Standard Flow). If the port is occupied,
-choose another loopback port in both configurations. `Scope` and `Client Secret` are optional.
+Without `Redirect URL`, the extension lets the operating system assign a free loopback port
+and sends `http://localhost:<assigned-port>/` as the redirect URI to the provider. Explicit
+`"Redirect URL": "http://localhost:0/"` also requests automatic port selection. The provider's
+client must accept changing loopback ports; check its redirect-URI validation rules.
+
+If the provider requires a fixed redirect URI, configure, for example,
+`"Redirect URL": "http://localhost:18080/"` and register that exact URL with the provider.
+The extension respects this port and reports an error if it is occupied; it does not silently
+switch ports. For Keycloak, enable Standard Flow. `Scope` and `Client Secret` are optional.
 Auth and token endpoints require HTTPS except on loopback. Keep confidential profiles in the
 private environment file: merging is shallow, so private `Security` replaces public `Security`.
 
 Tokens are cached only in memory, separately by environment directory, environment name and
 profile configuration, until shortly before `expires_in`. Expiry starts a new browser login;
 refresh tokens are not used. Login times out after three minutes. Token acquisition happens
-when sending requests, not in hovers, cURL previews or pre-request scripts. For SSH, containers
-or other remote extension hosts, forward the callback port to the browser's machine.
+when sending requests, not in hovers, cURL previews or pre-request scripts.
+
+For WSL and remote extension hosts, the extension asks VS Code to forward the callback before
+opening the browser. It uses the browser-facing HTTP loopback address for both authorization
+and token exchange, even if the forwarded port differs from the listener's port. Localhost
+listeners bind to IPv4 loopback. Keep the remote connection open during login. Explicit fixed
+redirect URLs must be forwarded unchanged; free the corresponding Windows/local port if VS
+Code cannot preserve that URL. Remote setups that expose only a public HTTPS tunnel instead
+of an HTTP loopback address are not supported by this callback flow.
 
 ### Editing environments in a table
 
