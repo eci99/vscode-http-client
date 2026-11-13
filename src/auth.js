@@ -109,13 +109,7 @@ function createAuthProvider({ openExternal, fetch: doFetch = fetch, timeoutMs = 
     if (cached && cached.expiresAt > Date.now()) return cached.token;
     if (pending.has(key)) return pending.get(key);
     const loginGeneration = generation;
-    const login = (async () => {
-      const { code, verifier, redirectUri } = await authorize(config, openExternal, timeoutMs, externalizeRedirect, reauthRequired.has(key));
-      if (loginGeneration !== generation) throw new Error('OAuth2: token cache was cleared during login; send the request again');
-      const body = new URLSearchParams({
-        grant_type: 'authorization_code', client_id: config['Client ID'],
-        code, redirect_uri: redirectUri, code_verifier: verifier
-      });
+    const requestToken = async body => {
       if (config['Client Secret']) body.set('client_secret', config['Client Secret']);
       const response = await doFetch(tokenUrl.toString(), {
         method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -124,14 +118,39 @@ function createAuthProvider({ openExternal, fetch: doFetch = fetch, timeoutMs = 
       if (!response.ok) throw new Error(`OAuth2: token exchange failed (HTTP ${response.status})`);
       const data = await response.json();
       if (typeof data.access_token !== 'string' || !data.access_token) throw new Error('OAuth2: token response has no access_token');
+      return data;
+    };
+    const store = (data, previousRefreshToken) => {
       if (loginGeneration !== generation) throw new Error('OAuth2: token cache was cleared during login; send the request again');
       const expiresIn = Number(data.expires_in);
+      const refreshToken = typeof data.refresh_token === 'string' && data.refresh_token ? data.refresh_token : previousRefreshToken;
       cache.set(key, {
         token: data.access_token,
+        refreshToken,
         expiresAt: Date.now() + (Number.isFinite(expiresIn) && expiresIn > 0 ? Math.max(0, expiresIn - 30) * 1000 : 0)
       });
       reauthRequired.delete(key);
       return data.access_token;
+    };
+    const login = (async () => {
+      if (cached && cached.refreshToken) {
+        try {
+          const data = await requestToken(new URLSearchParams({
+            grant_type: 'refresh_token', client_id: config['Client ID'], refresh_token: cached.refreshToken
+          }));
+          return store(data, cached.refreshToken);
+        } catch (error) {
+          if (loginGeneration !== generation) throw error;
+          cache.delete(key);
+        }
+      }
+      const { code, verifier, redirectUri } = await authorize(config, openExternal, timeoutMs, externalizeRedirect, reauthRequired.has(key));
+      if (loginGeneration !== generation) throw new Error('OAuth2: token cache was cleared during login; send the request again');
+      const data = await requestToken(new URLSearchParams({
+        grant_type: 'authorization_code', client_id: config['Client ID'],
+        code, redirect_uri: redirectUri, code_verifier: verifier
+      }));
+      return store(data);
     })();
     pending.set(key, login);
     try { return await login; } finally { if (pending.get(key) === login) pending.delete(key); }

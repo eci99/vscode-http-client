@@ -3,6 +3,14 @@
 All notable changes to this extension are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.15] – 2026-11-13
+
+### Added
+
+- OAuth2 access tokens are renewed with the provider's `refresh_token` when available, so
+  the browser login is only needed if the refresh fails. Request `offline_access` in `Scope`
+  if the provider requires it.
+
 ## [0.1.14] – 2026-11-13
 
 ### Added
