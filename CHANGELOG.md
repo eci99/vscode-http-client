@@ -3,6 +3,13 @@
 All notable changes to this extension are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- OAuth2 Client Credentials profiles can acquire and cache access tokens with
+  `{{$auth.token("profile-id")}}`.
+
 ## [0.1.15] – 2026-11-13
 
 ### Added

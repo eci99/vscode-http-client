@@ -97,11 +97,15 @@ function createAuthProvider({ openExternal, fetch: doFetch = fetch, timeoutMs = 
     const profiles = envVars && envVars.Security && envVars.Security.Auth;
     const config = profiles && Object.prototype.hasOwnProperty.call(profiles, id) && profiles[id];
     if (!config) throw new Error(`OAuth2: Security.Auth profile "${id}" not found in the selected environment`);
-    if (config.Type !== 'OAuth2' || config['Grant Type'] !== 'Authorization Code') {
-      throw new Error(`OAuth2: profile "${id}" requires Type "OAuth2" and Grant Type "Authorization Code"`);
+    const grantType = config['Grant Type'];
+    if (config.Type !== 'OAuth2' || !['Authorization Code', 'Client Credentials'].includes(grantType)) {
+      throw new Error(`OAuth2: profile "${id}" requires Type "OAuth2" and Grant Type "Authorization Code" or "Client Credentials"`);
     }
     if (typeof config['Client ID'] !== 'string' || !config['Client ID'].trim()) {
       throw new Error(`OAuth2: profile "${id}" is missing Client ID`);
+    }
+    if (grantType === 'Client Credentials' && (typeof config['Client Secret'] !== 'string' || !config['Client Secret'])) {
+      throw new Error(`OAuth2: profile "${id}" is missing Client Secret`);
     }
     const tokenUrl = endpoint(config['Token URL'], 'Token URL');
     const key = JSON.stringify([scope, id, config]);
@@ -133,6 +137,11 @@ function createAuthProvider({ openExternal, fetch: doFetch = fetch, timeoutMs = 
       return data.access_token;
     };
     const login = (async () => {
+      if (grantType === 'Client Credentials') {
+        const body = new URLSearchParams({ grant_type: 'client_credentials', client_id: config['Client ID'] });
+        if (config.Scope) body.set('scope', config.Scope);
+        return store(await requestToken(body));
+      }
       if (cached && cached.refreshToken) {
         try {
           const data = await requestToken(new URLSearchParams({
