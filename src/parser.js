@@ -139,6 +139,14 @@ function parseBlock(block, fileVariables) {
     requestLine += L[i].text.trim();
     i++;
   }
+  // FetchXML is commonly formatted across several indented XML lines. Once its query
+  // parameter starts, those lines belong to the URL rather than the header section.
+  if (/(?:[?&])fetchXml=/i.test(requestLine)) {
+    while (i < L.length && /^\s+\S/.test(L[i].text)) {
+      requestLine += L[i].text.trim();
+      i++;
+    }
+  }
   let rl = requestLine;
   const vm = rl.match(/\s+(HTTP\/[\d.]+)$/i);
   if (vm) {

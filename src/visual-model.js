@@ -133,6 +133,14 @@ function blockModel(block) {
     requestLine += L[i].trim();
     multiline = true;
   }
+  // Keep formatted FetchXML in the query value; XML attributes may contain colons
+  // that otherwise make these indented lines look like HTTP headers.
+  if (/(?:[?&])fetchXml=/i.test(requestLine)) {
+    for (; i <= last && /^\s+\S/.test(L[i]); i++) {
+      requestLine += L[i].trim();
+      multiline = true;
+    }
+  }
   const req = { method: 'GET', url: '', query: [], multilineQuery: false, httpVersion: '', headers: [], headerExtra: '', body: '', handlers: '', responseFile: null };
   let rl = requestLine;
   const vm = rl.match(/\s+(HTTP\/[\d.]+)$/i);

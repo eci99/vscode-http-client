@@ -126,6 +126,29 @@ test('parser', () => {
   assert.strictEqual(findRequestAt(p, auth.line + 3), auth);
 });
 
+test('formatted FetchXML stays in the query parameter', () => {
+  const text = `GET https://api.example/incidents?fetchXml=<fetch top="2">
+    <entity name="incident">
+      <condition attribute="createdon" operator="gt" value="2026-03-10T00:00:00+00:00" />
+    </entity>
+  </fetch>
+Authorization: Bearer token
+X-Api-Key: key
+`;
+  const req = parse(text).requests[0];
+  assert.strictEqual(req.url, 'https://api.example/incidents?fetchXml=<fetch top="2"><entity name="incident"><condition attribute="createdon" operator="gt" value="2026-03-10T00:00:00+00:00" /></entity></fetch>');
+  assert.deepStrictEqual(req.headers, [
+    { name: 'Authorization', value: 'Bearer token' },
+    { name: 'X-Api-Key', value: 'key' }
+  ]);
+  const visualRequest = visual.toModel(text)[0].request;
+  assert.deepStrictEqual(visualRequest.query, [{
+    name: 'fetchXml', value: '<fetch top="2"><entity name="incident"><condition attribute="createdon" operator="gt" value="2026-03-10T00:00:00+00:00" /></entity></fetch>', eq: true
+  }]);
+  assert.deepStrictEqual(visualRequest.headers, req.headers);
+  assert.strictEqual(visualRequest.headerExtra, '');
+});
+
 test('dynamic variables', () => {
   assert.match(resolveDynamic('$uuid'), /^[0-9a-f-]{36}$/);
   const n = resolveDynamic('$random.integer(5, 6)');
