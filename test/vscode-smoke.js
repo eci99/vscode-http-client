@@ -109,6 +109,7 @@ const vscode = {
     onDidChangeWindowState: () => ({})
   },
   workspace: {
+    isTrusted: true,
     workspaceFolders: [{ uri: Uri.file(dir) }],
     getWorkspaceFolder: () => ({ uri: Uri.file(dir) }),
     getConfiguration: () => ({ get: (k, d) => d }),
@@ -161,6 +162,10 @@ require.cache.vscode = { id: 'vscode', filename: 'vscode', loaded: true, exports
 
 const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json');
+  if (new URL(req.url, 'http://localhost').pathname === '/token') {
+    res.end(JSON.stringify({ access_token: 'smoke-token', expires_in: 300 }));
+    return;
+  }
   res.end(JSON.stringify({ path: req.url, auth: req.headers.authorization || null, hit: ++hits }));
 });
 
@@ -192,7 +197,11 @@ server.listen(0, '127.0.0.1', async () => {
     ]);
 
     const lenses = providers.codeLens.provideCodeLenses(doc);
-    assert.deepStrictEqual(lenses.map(l => l.command.title), ['▶▶ Run all requests', 'Environment: dev', '▶ Send Request', '▶ Send Request']);
+    assert.deepStrictEqual(lenses.map(l => l.command.title), [
+      '▶▶ Run all requests', 'Environment: dev', '▶ Send Request', 'Copy as cURL', '▶ Send Request', 'Copy as cURL'
+    ]);
+    await commands['httpClient.copyAsCurl'](doc.uri, 1);
+    assert.ok(clipboard.includes(`http://127.0.0.1:${port}/a`) && clipboard.includes('Authorization: s3'), clipboard);
 
     await commands['httpClient.runAll'](doc.uri);
     const content = providers.content.provideTextDocumentContent(shown[0].uri);
@@ -269,9 +278,18 @@ server.listen(0, '127.0.0.1', async () => {
     assert.ok(clipboard.includes(`http://127.0.0.1:${port}/a`) && clipboard.includes('Authorization: s3'), clipboard);
 
     // Visual editor: the webview gets the blocks, edits change only their block
+    const authDir = path.join(dir, 'auth');
+    fs.mkdirSync(authDir);
+    fs.writeFileSync(path.join(authDir, 'http-client.env.json'), JSON.stringify({ dev: {
+      host: `127.0.0.1:${port}`,
+      Security: { Auth: { smoke: {
+        Type: 'OAuth2', 'Grant Type': 'Client Credentials', 'Client ID': 'smoke-client',
+        'Client Secret': 'smoke-secret', 'Token URL': `http://127.0.0.1:${port}/token`
+      } } }
+    } }));
     const vdoc = {
-      uri: Uri.file(path.join(dir, 'visual.http')), languageId: 'http-client', version: 1, eol: 1,
-      text: '@v = 1\n\n### A\n# @name a\nGET http://{{host}}/a?x=1\nAccept: */*\n\n### B\nPOST http://{{host}}/b\n\n{"a":1}\n',
+      uri: Uri.file(path.join(authDir, 'visual.http')), languageId: 'http-client', version: 1, eol: 1,
+      text: '@v = 1\n\n### A\n# @name a\nGET http://{{host}}/a?x=1\nAccept: */*\nAuthorization: Bearer {{$auth.token("smoke")}}\n\n### B\nPOST http://{{host}}/b\n\n{"a":1}\n',
       getText() { return this.text; }
     };
     vscode.workspace.textDocuments.push(vdoc);
@@ -301,7 +319,7 @@ server.listen(0, '127.0.0.1', async () => {
     edited.request.query.push({ name: 'y', value: '{{v}}', eq: true });
     edited.request.headers.push({ name: 'X-Test', value: 'yes' });
     await message({ type: 'edit', version: 1, changes: [{ index: 1, block: edited }] });
-    assert.strictEqual(vdoc.text, '@v = 1\n\n### A\n# @name a\nPUT http://{{host}}/a?x=1&y={{v}}\nAccept: */*\nX-Test: yes\n\n### B\nPOST http://{{host}}/b\n\n{"a":1}\n');
+    assert.strictEqual(vdoc.text, '@v = 1\n\n### A\n# @name a\nPUT http://{{host}}/a?x=1&y={{v}}\nAccept: */*\nAuthorization: Bearer {{$auth.token("smoke")}}\nX-Test: yes\n\n### B\nPOST http://{{host}}/b\n\n{"a":1}\n');
     assert.deepStrictEqual(posted[posted.length - 1], { type: 'ack', ok: true, version: 2 });
     await message({ type: 'edit', version: 1, changes: [{ index: 1, block: vmodel.blocks[2] }] });
     assert.strictEqual(posted.filter(m => m.type === 'ack').pop().ok, false, 'an edit of an old version is dropped');
@@ -313,6 +331,11 @@ server.listen(0, '127.0.0.1', async () => {
     assert.strictEqual(hits, hitsBefore + 1);
     const sent = providers.content.provideTextDocumentContent(shown[0].uri);
     assert.ok(sent.includes('/a?x=1&y=1'), sent);
+    assert.ok(sent.includes('Bearer smoke-token'), sent);
+    await message({ type: 'copyAsCurl', index: 1 });
+    assert.ok(clipboard.includes(`http://127.0.0.1:${port}/a?x=1&y=1`), clipboard);
+    assert.ok(clipboard.includes('X-Test: yes'), clipboard);
+    assert.ok(clipboard.includes('Authorization: Bearer smoke-token'), clipboard);
 
     // A file with merge conflicts is shown in the text editor
     const cdoc = {

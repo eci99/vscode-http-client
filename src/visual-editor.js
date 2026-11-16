@@ -67,6 +67,7 @@ class VisualEditorProvider {
    * @param {{ environments(doc): { names: string[], current: string|null },
    *           setEnvironment(name: string|null): Promise<void>,
    *           send(uri: vscode.Uri, line: number): Promise<void>,
+   *           copyAsCurl(uri: vscode.Uri, line: number): Promise<void>,
    *           runAll(uri: vscode.Uri): Promise<void>,
    *           editEnvironments(uri: vscode.Uri): Promise<void> }} host
    */
@@ -195,6 +196,13 @@ class VisualEditorProvider {
         const req = block && parse(document.getText()).requests.find(r => r.startLine === block.startLine);
         if (!req) { vscode.window.showWarningMessage('This block contains no request.'); return; }
         await this.host.send(document.uri, req.line);
+        return;
+      }
+      case 'copyAsCurl': {
+        const block = splitBlocks(document.getText())[msg.index];
+        const req = block && parse(document.getText()).requests.find(r => r.startLine === block.startLine);
+        if (!req) { vscode.window.showWarningMessage('This block contains no request.'); return; }
+        await this.host.copyAsCurl(document.uri, req.line);
         return;
       }
       case 'runAll':

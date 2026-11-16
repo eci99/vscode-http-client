@@ -1,4 +1,24 @@
-.table-wrap { overflow-x: auto; }
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding-bottom: 4px;
+}
+
+#toolbar { flex: 0 0 auto; margin-bottom: 0; }
+
+#content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.table-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.hints { flex: 0 0 auto; margin: 4px 0 0; }
+.hints p { margin: 0; line-height: 1.25; }
 
 .env-table {
   border-collapse: collapse;
@@ -13,15 +33,27 @@
 }
 
 .env-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   background: var(--vscode-sideBar-background, transparent);
   font-weight: 600;
   min-width: 180px;
 }
 
 .env-table th.active { border-top: 2px solid var(--vscode-charts-green); }
-.env-table td.active { background: color-mix(in srgb, var(--vscode-charts-green) 6%, transparent); }
 .env-table .var-col { min-width: 180px; position: sticky; left: 0; background: var(--vscode-editor-background); z-index: 1; }
-.env-table th.var-col { background: var(--vscode-sideBar-background, var(--vscode-editor-background)); }
+.env-table th.var-col { background: var(--vscode-sideBar-background, var(--vscode-editor-background)); z-index: 3; }
+.env-table th.var-col .btn.sort {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+  padding: 4px 6px;
+}
+.env-table th.var-col .btn.sort:hover { background: var(--vscode-toolbar-hoverBackground); }
 .env-table .add-col { min-width: 150px; font-weight: normal; }
 
 .env-head, .var-head, .cell-wrap {
@@ -32,34 +64,45 @@
 
 .env-head .env-name { flex: 1; min-width: 60px; font-weight: 600; }
 .env-head span.env-name { padding: 4px 6px; }
-.env-head input.env-name, .var-head input.var-name, .env-table input.cell, .new-env {
+.env-head input.env-name, .var-head input.var-name, .env-table input.cell, .env-table textarea.cell, .new-env {
   background: transparent;
   border-color: transparent;
 }
-.env-head input.env-name:hover, .var-head input.var-name:hover, .env-table input.cell:hover, .new-env:hover {
+.env-head input.env-name:hover, .var-head input.var-name:hover, .env-table input.cell:hover, .env-table textarea.cell:hover, .new-env:hover {
   border-color: var(--vscode-input-border, var(--vscode-panel-border));
 }
 
-.var-head .var-name { flex: 1; font-family: var(--vscode-editor-font-family); }
+.var-head .var-name { flex: 1; min-width: 60px; font-family: var(--vscode-editor-font-family); }
 .new-row .var-name { width: 100%; }
 .new-env { width: 100%; }
 
-.cell-wrap input.cell {
+.cell-wrap input.cell, .cell-wrap textarea.cell {
   flex: 1;
   min-width: 80px;
   font-family: var(--vscode-editor-font-family);
   font-size: var(--vscode-editor-font-size);
 }
 
+.cell-wrap textarea.cell {
+  width: auto;
+  height: 24px;
+  min-height: 24px;
+  overflow: hidden;
+  resize: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .cell-wrap input.cell:disabled { opacity: .7; }
 .cell-wrap .btn.icon { opacity: 0; padding: 2px 4px; }
 .cell-wrap:hover .btn.icon, .cell-wrap .btn.lock.on, .cell-wrap:focus-within .btn.icon { opacity: 1; }
 .var-head .btn.icon { opacity: 0; }
-.var-head:hover .btn.icon { opacity: 1; }
+.var-head:hover .btn.icon, .var-head .btn.lock.on { opacity: 1; }
 .icon-space { display: inline-block; width: 22px; }
 
-td.private { background: color-mix(in srgb, var(--vscode-charts-yellow) 7%, transparent); }
+.env-table tbody tr:hover > td, .env-table tbody tr:focus-within > td {
+  background: var(--vscode-list-hoverBackground, var(--vscode-editor-selectionBackground));
+}
 .btn.active-env { color: var(--vscode-charts-green); }
 
-.hints { margin-top: 16px; }
 .empty.error { color: var(--vscode-errorForeground); }

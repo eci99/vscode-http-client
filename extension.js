@@ -505,17 +505,29 @@ async function resendLast() {
   await execute(doc, requests);
 }
 
-async function copyAsCurl() {
-  const t = resolveTarget();
+async function copyAsCurl(uriArg, lineArg) {
+  const t = resolveTarget(uriArg, lineArg);
   if (!t) return;
   const parsed = parse(t.doc.getText());
   const req = findRequestAt(parsed, t.line);
   if (!req) return;
   const ctx = makeContext(t.doc, parsed);
   try {
-    const built = buildRequest(req, {
-      requestVars: {}, fileVars: ctx.fileVars, globals: ctx.globals, envVars: ctx.envVars
-    }, ctx.baseDir);
+    const state = {
+      requestVars: {}, fileVars: ctx.fileVars, globals: ctx.globals, envVars: ctx.envVars,
+      authTokens: Object.create(null)
+    };
+    const missing = new Set();
+    let built = buildRequest(req, state, ctx.baseDir, missing);
+    for (const name of missing) {
+      const auth = name.match(/^\$auth\.token\(\s*(['"])([^'"]+)\1\s*\)$/);
+      if (!auth) continue;
+      state.authTokens[auth[2]] = await ctx.resolveAuthToken(auth[2], ctx.envVars);
+    }
+    if (Object.keys(state.authTokens).length) {
+      missing.clear();
+      built = buildRequest(req, state, ctx.baseDir, missing);
+    }
     await vscode.env.clipboard.writeText(toCurl(built));
     vscode.window.setStatusBarMessage('$(check) cURL command copied', 3000);
   } catch (e) {
@@ -542,6 +554,9 @@ const codeLensProvider = {
       const range = new vscode.Range(r.line, 0, r.line, 0);
       lenses.push(new vscode.CodeLens(range, {
         title: '▶ Send Request', command: 'httpClient.sendRequest', arguments: [doc.uri, r.line]
+      }));
+      lenses.push(new vscode.CodeLens(range, {
+        title: 'Copy as cURL', command: 'httpClient.copyAsCurl', arguments: [doc.uri, r.line]
       }));
     }
     return lenses;
@@ -869,6 +884,7 @@ function activate(context) {
     environments: doc => ({ names: loadEnvironments(doc).names, current: selectedEnv() }),
     setEnvironment,
     send: sendRequest,
+    copyAsCurl,
     runAll,
     editEnvironments
   });

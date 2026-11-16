@@ -464,7 +464,9 @@ test('unresolved variables + curl', () => {
   const built = buildRequest(p.requests[0], { requestVars: {}, fileVars: {}, globals: {}, envVars: { host: 'h.io' } }, tmp, missing);
   assert.deepStrictEqual([...missing], ['nope']);
   assert.strictEqual(built.url, 'https://h.io/x');
-  assert.ok(toCurl(built).includes("'X-A: {{nope}}'"));
+  const curl = toCurl(built);
+  assert.ok(curl.includes("-H 'X-A: {{nope}}'"));
+  assert.ok(!curl.includes('-H \\\n  '));
 });
 
 test('connection error is reported', async () => {

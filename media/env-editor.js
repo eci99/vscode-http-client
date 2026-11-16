@@ -8,7 +8,7 @@
 (function () {
   // @ts-ignore
   const vscode = acquireVsCodeApi();
-  const ui = Object.assign({ hidePrivate: false }, vscode.getState() || {});
+  const ui = Object.assign({ hidePrivate: true }, vscode.getState() || {});
   const SHARED = '$shared';
 
   let model = null;
@@ -61,21 +61,39 @@
    * @param {(v: string) => void} commit
    */
   function field(value, commit, attrs = {}) {
-    return h('input', {
-      type: 'text', spellcheck: 'false', value, ...attrs,
-      oninput: () => { editing = true; },
+    const multiline = attrs.multiline === true;
+    const fieldAttrs = { ...attrs };
+    delete fieldAttrs.multiline;
+    const resize = el => {
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    return h(multiline ? 'textarea' : 'input', {
+      ...(multiline ? { rows: 1, wrap: 'soft' } : { type: 'text' }),
+      spellcheck: 'false', value, ...fieldAttrs,
+      onfocus: e => { if (multiline) resize(e.target); },
+      onmouseenter: e => { if (multiline) resize(e.target); },
+      onmouseleave: e => {
+        if (multiline && document.activeElement !== e.target) e.target.style.height = '';
+      },
+      oninput: e => { editing = true; if (multiline) resize(e.target); },
       onkeydown: e => {
         if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
         if (e.key === 'Escape') { e.target.value = value; editing = false; e.target.blur(); }
       },
       onchange: e => { if (e.target.value !== value) commit(e.target.value); else done(); },
-      onblur: () => { if (editing === false) done(); }
+      onblur: e => {
+        if (multiline) e.target.style.height = '';
+        if (editing === false) done();
+      }
     });
   }
 
   function render() {
     const active = document.activeElement;
-    if (!refocus && active instanceof HTMLInputElement && active.dataset.focus) refocus = { id: active.dataset.focus };
+    if (!refocus && (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) && active.dataset.focus) {
+      refocus = { id: active.dataset.focus };
+    }
     const scroll = { x: window.scrollX, y: window.scrollY };
     renderToolbar();
     const content = document.getElementById('content');
@@ -83,15 +101,22 @@
     window.scrollTo(scroll.x, scroll.y);
     if (refocus) {
       const el = document.querySelector(`[data-focus="${CSS.escape(refocus.id)}"]`);
-      if (el instanceof HTMLInputElement) el.focus();
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) el.focus();
       refocus = null;
     }
   }
 
   function renderToolbar() {
     document.getElementById('toolbar').replaceChildren(
-      h('span', { class: 'file' }, 'Environments'),
-      h('span', { class: 'hint' }, model.dir),
+      h('input', {
+        type: 'search', class: 'filter', placeholder: 'Filter variables',
+        'aria-label': 'Filter environment variables', value: ui.filter || '',
+        oninput: e => {
+          ui.filter = e.target.value;
+          vscode.setState(ui);
+          refreshTable();
+        }
+      }),
       h('span', { class: 'spacer' }),
       h('label', { class: 'check', title: 'Show the values of the private file as dots' },
         h('input', { type: 'checkbox', checked: ui.hidePrivate, onchange: e => { ui.hidePrivate = e.target.checked; vscode.setState(ui); render(); } }),
@@ -99,6 +124,15 @@
       button('{ } http-client.env.json', 'Open the public file', () => vscode.postMessage({ type: 'openFile', private: false }), 'secondary'),
       button('{ } private', 'Open http-client.private.env.json', () => vscode.postMessage({ type: 'openFile', private: true }), 'secondary')
     );
+  }
+
+  function refreshTable() {
+    const current = document.querySelector('.table-wrap');
+    if (!current) return;
+    const next = renderTable();
+    next.scrollTop = current.scrollTop;
+    next.scrollLeft = current.scrollLeft;
+    current.replaceWith(next);
   }
 
   function renderError() {
@@ -110,11 +144,29 @@
   function renderTable() {
     const envs = model.environments;
     const others = envs.filter(e => e !== SHARED);
+    const filter = (ui.filter || '').trim().toLocaleLowerCase();
+    const variables = model.variables.filter(name => {
+      if (!filter || name.toLocaleLowerCase().includes(filter)) return true;
+      const cells = model.cells[name] || {};
+      return Object.values(cells).some(cell =>
+        (!ui.hidePrivate || !cell.private) && String(cell.value).toLocaleLowerCase().includes(filter));
+    });
+    if (ui.variableSort) {
+      const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+      const direction = ui.variableSort === 'asc' ? 1 : -1;
+      variables.sort((a, b) => direction * collator.compare(a, b));
+    }
     const table = h('table', { class: 'env-table' });
 
     // Header: a column per environment
     table.append(h('thead', {}, h('tr', {},
-      h('th', { class: 'var-col' }, 'Variable'),
+      h('th', { class: 'var-col' }, button(
+        `Variable ${ui.variableSort === 'asc' ? '↑' : ui.variableSort === 'desc' ? '↓' : '↕'}`,
+        'Sort variables A to Z / Z to A', () => {
+          ui.variableSort = ui.variableSort === 'asc' ? 'desc' : 'asc';
+          vscode.setState(ui);
+          refreshTable();
+        }, 'sort')),
       envs.map(env => h('th', { class: env === model.active ? 'active' : '' },
         h('div', { class: 'env-head' },
           env === SHARED
@@ -132,14 +184,38 @@
           : button('+ $shared', 'Values for all environments', () => send({ op: 'addEnvironment', env: SHARED }), 'link')))));
 
     const body = h('tbody');
-    for (const name of model.variables) {
+    if (filter && !variables.length) {
+      body.append(h('tr', { class: 'filter-empty' },
+        h('td', { colspan: envs.length + 2, class: 'hint' }, 'No matching variables.')));
+    }
+    for (const name of variables) {
       const cells = model.cells[name] || {};
       const privateElsewhere = Object.values(cells).some(c => c.private);
+      const isPrivate = envs.some(env => {
+        const key = `${name}:${env}`;
+        const cell = cells[env];
+        return cell ? cell.private : key in privateChoice ? privateChoice[key] : privateElsewhere && env !== SHARED;
+      });
       body.append(h('tr', {},
         h('td', { class: 'var-col' },
           h('div', { class: 'var-head' },
             field(name, to => { refocus = { id: `var:${to.trim()}` }; send({ op: 'renameVariable', from: name, to: to.trim() }); },
               { class: 'var-name', 'data-focus': `var:${name}`, title: `{{${name}}} – rename` }),
+            button(isPrivate ? '🔒' : '🔓',
+              isPrivate ? 'Move all values to the public file' : 'Move all values to the private file',
+              () => {
+                const targetPrivate = !isPrivate;
+                let pendingMoves = 0;
+                for (const env of envs) {
+                  const key = `${name}:${env}`;
+                  const cell = cells[env];
+                  if (cell && cell.private !== targetPrivate) {
+                    pendingMoves++;
+                    vscode.postMessage({ type: 'op', change: { op: 'move', env, name, private: targetPrivate } });
+                  } else if (!cell) privateChoice[key] = targetPrivate;
+                }
+                if (!pendingMoves) render();
+              }, `icon lock${isPrivate ? ' on' : ''}`),
             button('✕', `Delete ${name} in all environments`, () => send({ op: 'deleteVariable', name }), 'icon danger'))),
         envs.map(env => renderCell(name, env, cells[env], cells[SHARED], privateElsewhere)),
         h('td')));
@@ -159,7 +235,8 @@
     const inherited = !cell && env !== SHARED && shared ? `$shared: ${shared.private && ui.hidePrivate ? '••••' : shared.value}` : '';
     const input = field(cell ? cell.value : '', value => send({ op: 'set', env, name, value, private: isPrivate }), {
       class: `cell${cell ? '' : ' missing'}`,
-      type: isPrivate && ui.hidePrivate ? 'password' : 'text',
+      type: isPrivate && ui.hidePrivate ? 'password' : undefined,
+      multiline: !(isPrivate && ui.hidePrivate),
       placeholder: inherited || 'not set',
       'data-focus': `cell:${name}:${env}`,
       disabled: cell && cell.kind === 'json',
@@ -170,18 +247,6 @@
     return h('td', { class: `${isPrivate ? 'private' : ''}${env === model.active ? ' active' : ''}` },
       h('div', { class: 'cell-wrap' },
         input,
-        button(isPrivate ? '🔒' : '🔓',
-          isPrivate ? 'Private (http-client.private.env.json) – click to move to the public file'
-            : 'Public (http-client.env.json) – click to move to the private file',
-          () => {
-            if (cell) send({ op: 'move', env, name, private: !cell.private });
-            else {
-              // The lock of an empty cell only decides where the value will be written.
-              privateChoice[key] = !isPrivate;
-              refocus = { id: `cell:${name}:${env}` };
-              render();
-            }
-          }, `icon lock${isPrivate ? ' on' : ''}`),
         cell ? button('✕', 'Remove the value from this environment', () => send({ op: 'delete', env, name }), 'icon danger') : h('span', { class: 'icon-space' })));
   }
 

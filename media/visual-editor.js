@@ -347,6 +347,7 @@
       h('span', { class: 'actions' },
         req ? button('▶ Send', 'Send this request (Ctrl+Enter)', () => command({ type: 'send', index }), 'send') : null,
         req ? button('⧉', 'Duplicate', () => command({ type: 'op', op: 'duplicate', index }), 'icon') : null,
+        req ? button('curl', 'Copy as cURL command', () => command({ type: 'copyAsCurl', index }), 'icon') : null,
         b.separator || req ? button('↑', 'Move up', () => command({ type: 'op', op: 'up', index }), `icon${canUp ? '' : ' hidden'}`) : null,
         b.separator || req ? button('↓', 'Move down', () => command({ type: 'op', op: 'down', index }), `icon${canDown ? '' : ' hidden'}`) : null,
         button('🗑', 'Delete (undo with Ctrl+Z)', () => command({ type: 'op', op: 'delete', index }), 'icon danger')

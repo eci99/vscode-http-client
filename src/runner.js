@@ -325,9 +325,9 @@ function shellQuote(s) {
 
 function toCurl(built) {
   const parts = ['curl'];
-  if (built.method !== 'GET') parts.push('-X', built.method);
+  if (built.method !== 'GET') parts.push(`-X '${built.method}'`);
   parts.push(shellQuote(built.url));
-  for (const h of built.headers) parts.push('-H', shellQuote(`${h.name}: ${h.value}`));
+  for (const h of built.headers) parts.push(`-H ${shellQuote(`${h.name}: ${h.value}`)}`);
   if (built.body && built.body.length) parts.push('--data-raw', shellQuote(built.body.toString('utf8')));
   return parts.join(' \\\n  ');
 }
