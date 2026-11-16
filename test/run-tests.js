@@ -219,6 +219,50 @@ test('OAuth2 authorization code with PKCE, state validation and token cache', as
   assert.strictEqual(tokenCalls, 4);
 });
 
+test('OAuth2 client credentials token and cache', async () => {
+  let tokenCalls = 0;
+  let apiCalls = 0;
+  const config = {
+    Type: 'OAuth2', 'Grant Type': 'Client Credentials', 'Client ID': 'client-id',
+    'Client Secret': 'client-secret', Scope: 'https://api.example/.default',
+    'Token URL': 'https://auth.example/token'
+  };
+  const envVars = { Security: { Auth: { d365: config } } };
+  const provider = createAuthProvider({
+    openExternal: async () => { throw new Error('Client Credentials must not open a browser'); },
+    fetch: async (url, options) => {
+      tokenCalls++;
+      assert.strictEqual(url, config['Token URL']);
+      assert.strictEqual(options.method, 'POST');
+      assert.strictEqual(options.redirect, 'error');
+      assert.strictEqual(options.body.get('grant_type'), 'client_credentials');
+      assert.strictEqual(options.body.get('client_id'), config['Client ID']);
+      assert.strictEqual(options.body.get('client_secret'), config['Client Secret']);
+      assert.strictEqual(options.body.get('scope'), config.Scope);
+      return new Response(JSON.stringify({ access_token: 'client-token', expires_in: 300 }));
+    }
+  });
+  const req = parse('GET https://api.example/data\nAuthorization: Bearer {{$auth.token("d365")}}').requests[0];
+  const ctx = {
+    baseDir: tmp, envVars, globals: {}, resolveAuthToken: provider,
+    fetch: async (url, options) => {
+      apiCalls++;
+      assert.strictEqual(url, 'https://api.example/data');
+      assert.strictEqual(options.headers.get('authorization'), 'Bearer client-token');
+      return new Response('{}');
+    }
+  };
+
+  assert.strictEqual((await runRequest(req, ctx)).error, null);
+  assert.strictEqual((await runRequest(req, ctx)).error, null);
+  assert.strictEqual(tokenCalls, 1);
+  assert.strictEqual(apiCalls, 2);
+  await assert.rejects(provider('missing-secret', { Security: { Auth: {
+    'missing-secret': { ...config, 'Client Secret': '' }
+  } } }), /missing Client Secret/);
+  assert.strictEqual(tokenCalls, 1);
+});
+
 test('OAuth2 cache clearing invalidates an in-flight token exchange', async () => {
   let exchanges = 0;
   let provider;

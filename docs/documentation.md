@@ -392,14 +392,14 @@ Auth and token endpoints require HTTPS except on loopback. Keep confidential pro
 private environment file: merging is shallow, so private `Security` replaces public `Security`.
 
 Tokens are cached only in memory, separately by environment directory, environment name and
-profile configuration, until shortly before `expires_in`. Expiry starts a new browser login;
-refresh tokens are not used. To log in again, run **HTTP-Client: Clear OAuth2 Tokens** from the
-Command Palette (`Ctrl+Shift+P`). It clears all cached profiles and requests `prompt=login`
-on their next login so a provider such as Keycloak prompts for reauthentication. It does not
-revoke issued tokens or terminate the provider's browser session; providers must honor the
-login prompt. Tokens from in-flight logins are discarded if the cache is cleared during login.
-Login times out after three minutes. Token acquisition happens
-when sending requests, not in hovers, cURL previews or pre-request scripts.
+profile configuration, until shortly before `expires_in`. When the provider returns a refresh
+token, it is used when the access token expires; if refresh fails, the extension starts a new
+browser login. To force reauthentication, run **HTTP-Client: Clear OAuth2 Tokens** from the
+Command Palette (`Ctrl+Shift+P`). It clears all cached profiles; the next Authorization Code
+login requests `prompt=login` so a provider such as Keycloak can prompt again. It does not
+revoke issued tokens or terminate the provider's browser session. Tokens from in-flight logins
+are discarded if the cache is cleared during login. Login times out after three minutes. Token
+acquisition happens when sending requests, not in hovers, cURL previews or pre-request scripts.
 
 For WSL and remote extension hosts, the extension asks VS Code to forward the callback before
 opening the browser. It uses the browser-facing HTTP loopback address for both authorization
@@ -408,6 +408,42 @@ listeners bind to IPv4 loopback. Keep the remote connection open during login. E
 redirect URLs must be forwarded unchanged; free the corresponding Windows/local port if VS
 Code cannot preserve that URL. Remote setups that expose only a public HTTPS tunnel instead
 of an HTTP loopback address are not supported by this callback flow.
+
+### OAuth2 Client Credentials
+
+For service-to-service APIs, reference a profile from `Security.Auth` with the same
+`{{$auth.token("profile-id")}}` syntax:
+
+```json
+{
+  "dev": {
+    "Security": {
+      "Auth": {
+        "d365": {
+          "Type": "OAuth2",
+          "Grant Type": "Client Credentials",
+          "Client ID": "client-id",
+          "Client Secret": "keep-this-private",
+          "Scope": "https://api.example.com/.default",
+          "Token URL": "https://auth.example.com/token"
+        }
+      }
+    }
+  }
+}
+```
+
+```http
+GET https://api.example.com/data
+Authorization: Bearer {{$auth.token("d365")}}
+```
+
+`Client ID`, `Client Secret`, and `Token URL` are required. `Scope` is sent when configured;
+`Auth URL` is not used. The extension sends the client credentials as an
+`application/x-www-form-urlencoded` token request. Keep the complete confidential profile in
+`http-client.private.env.json`: environment merging is shallow, so private `Security` replaces
+public `Security`. Access tokens are cached in memory until shortly before `expires_in`, then a
+new client-credentials token is requested. Refresh tokens are not used for this grant.
 
 ### Editing environments in a table
 
@@ -912,8 +948,9 @@ Supported with limitations:
 * **Global headers** last until VS Code is closed; global variables and cookies are stored per
   workspace.
 * **`jwt`:** keys are strings or PEM, not `CryptoKey` objects.
-* **OAuth2:** Authorization Code with PKCE is supported; other grant types and refresh tokens
-  are not. See [OAuth2 Authorization Code](#oauth2-authorization-code).
+* **OAuth2:** Authorization Code with PKCE and Client Credentials are supported. See
+  [OAuth2 Authorization Code](#oauth2-authorization-code) and
+  [OAuth2 Client Credentials](#oauth2-client-credentials).
 
 Not supported:
 

@@ -53,7 +53,7 @@ function baseDirFor(doc) {
 
 function readJson(file) {
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    return JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
   } catch (e) {
     if (fs.existsSync(file)) vscode.window.showWarningMessage(`Cannot read ${path.basename(file)}: ${e.message}`);
     return null;

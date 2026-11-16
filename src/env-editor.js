@@ -74,7 +74,7 @@ class EnvironmentEditor {
     }
     if (text.trim() === '') return { exists: true, text, json: {} };
     try {
-      return { exists: true, text, json: JSON.parse(text) };
+      return { exists: true, text, json: JSON.parse(text.replace(/^\uFEFF/, '')) };
     } catch (e) {
       return { exists: true, text, json: null, error: `${path.basename(uri.fsPath)}: ${e.message}` };
     }

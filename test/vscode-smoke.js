@@ -167,8 +167,8 @@ const server = http.createServer((req, res) => {
 server.listen(0, '127.0.0.1', async () => {
   try {
     const port = server.address().port;
-    fs.writeFileSync(path.join(dir, 'http-client.env.json'), JSON.stringify({ dev: { host: `127.0.0.1:${port}` } }));
-    fs.writeFileSync(path.join(dir, 'http-client.private.env.json'), JSON.stringify({ dev: { secret: 's3' } }));
+    fs.writeFileSync(path.join(dir, 'http-client.env.json'), `\uFEFF${JSON.stringify({ dev: { host: `127.0.0.1:${port}` } })}`);
+    fs.writeFileSync(path.join(dir, 'http-client.private.env.json'), `\uFEFF${JSON.stringify({ dev: { secret: 's3' } })}`);
     const text = '### A\nGET http://{{host}}/a\nAuthorization: {{secret}}\n\n> {%\nclient.test("ok", () => client.assert(response.body.auth === "s3"));\nclient.global.set("p", response.body.path);\n%}\n\n### B\nGET http://{{host}}/{{p}}\n';
     const file = path.join(dir, 'api.http');
     fs.writeFileSync(file, text);

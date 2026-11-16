@@ -36,6 +36,12 @@ Authorization: Bearer {{token}}
 GET {{baseUrl}}/headers
 X-Api-Key: {{apiKey}}
 
+### OAuth2 Client Credentials token from the selected environment
+# Configure azure-app-1 under Security.Auth in http-client.private.env.json with
+# Type=OAuth2, Grant Type=Client Credentials, Client ID, Client Secret, Scope, and Token URL.
+GET {{baseUrl}}/headers
+Authorization: Bearer {{$auth.token("azure-app-1")}}
+
 ### Signed JWT (HS256), created in a pre-request script
 < {%
   const token = jwt.sign(
